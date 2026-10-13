@@ -77,6 +77,8 @@ function ContextSummary({ context }: { context: QuestionContext }) {
     ['操作履歴', context.omitted.trailSteps],
     ['集約された関係の例', context.omitted.aggregatedExamples],
     ['依存している要素', context.omitted.usedBy],
+    ['変更された宣言', context.omitted.changedNodes],
+    ['変更されたファイル', context.omitted.changedFiles],
   ].filter(([, count]) => (count as number) > 0)
 
   return (
@@ -91,6 +93,14 @@ function ContextSummary({ context }: { context: QuestionContext }) {
       <dd>
         ノード {context.visible.nodes.length} 件 / 関係 {context.visible.edges.length} 件
       </dd>
+      {context.changes && (
+        <>
+          <dt>PR</dt>
+          <dd>
+            {context.changes.title}（この範囲の変更 {context.changes.inScope.length + context.omitted.changedNodes} 件 / 範囲外 {context.changes.outsideScope} 件）
+          </dd>
+        </>
+      )}
       <dt>周辺の関係</dt>
       <dd>{context.nearby.length} 件</dd>
       <dt>直近の操作</dt>

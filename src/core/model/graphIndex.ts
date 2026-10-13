@@ -15,6 +15,7 @@ export class GraphIndex {
   // Paths are asked for on every projection and context build; with tens of thousands of nodes,
   // walking up the parents each time dominates the cost.
   private readonly pathCache = new Map<string, GraphNode[]>()
+  private readonly changesWithinById = new Map<string, number>()
 
   constructor(graph: ProjectGraph) {
     this.graph = graph
@@ -62,6 +63,18 @@ export class GraphIndex {
       }
     }
     for (const node of graph.nodes) this.ancestors(node.id)
+    for (const id of new Set(graph.changes?.nodeIds ?? [])) {
+      for (const node of this.path(id)) this.changesWithinById.set(node.id, (this.changesWithinById.get(node.id) ?? 0) + 1)
+    }
+  }
+
+  /** Changed declarations at or below the node, in the change set laid over the graph. */
+  changesWithin(id: string): number {
+    return this.changesWithinById.get(id) ?? 0
+  }
+
+  get hasChanges(): boolean {
+    return this.changesWithinById.size > 0
   }
 
   get root(): GraphNode {

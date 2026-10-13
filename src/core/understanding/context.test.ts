@@ -193,4 +193,50 @@ describe('excerpt', () => {
   it('clamps the surrounding lines to the snippet', () => {
     expect(excerpt('a\nb', 1, { from: 1, to: 1 })).toBe('>    1 | a\n     2 | b')
   })
+
+  describe('with a pull request laid over the graph', () => {
+    const graph = miniGraph()
+    graph.changes = {
+      title: '#12 Gateway を差し替える',
+      url: 'https://example.com/pr/12',
+      description: '通信を差し替える',
+      base: 'abc',
+      nodeIds: ['method.GW.get', 'type.View'],
+      files: [
+        { path: 'Gateway.swift', status: 'modified', nodeIds: ['method.GW.get'] },
+        { path: 'Package.swift', status: 'modified', nodeIds: [] },
+      ],
+      warnings: [],
+    }
+    const local = new GraphIndex(graph)
+    const contextAt = (...actions: ExplorationAction[]) => {
+      const exploration = actions.reduce(createExplorationReducer(local), initialExploration(local))
+      return buildQuestionContext({ index: local, exploration, target: targetFromSelection(exploration.selection), question: 'この PR は何を変えた？' })
+    }
+
+    it('gives the PR and the declarations it changed inside the scope, and lets the answer point at them', () => {
+      const context = contextAt({ type: 'enterScope', scopeId: 'pkg.Data' })
+
+      expect(context.changes).toMatchObject({
+        title: '#12 Gateway を差し替える',
+        inScope: [{ id: 'method.GW.get', path: 'App > Data > Gateway > GW > GW.get' }],
+        outsideScope: 1,
+        filesWithoutDeclarations: [{ path: 'Package.swift', status: 'modified' }],
+      })
+      expect(referencedIds(context).has('method.GW.get')).toBe(true)
+    })
+
+    it('describes the same narrowed view the user sees', () => {
+      const context = contextAt(
+        { type: 'enterScope', scopeId: 'pkg.Feature' },
+        { type: 'enterScope', scopeId: 'mod.Screen' },
+        { type: 'setPerspective', perspective: 'responsibility' },
+        { type: 'select', selection: { kind: 'none' } },
+      )
+
+      expect(context.visible.nodes.map((node) => node.id)).toEqual(['type.View'])
+      expect(context.lens.showing).toContain('PR で変更された要素とその直接の相手だけに絞っている')
+    })
+  })
 })
+

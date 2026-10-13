@@ -7,7 +7,7 @@ const card = (id: string, question: string): AnswerCard => ({
   question,
   target: { kind: 'view' },
   targetLabel: '表示中の画面全体',
-  viewpoint: { scopeId: 'project', perspective: 'structure', flowId: null, selection: { kind: 'none' } },
+  viewpoint: { scopeId: 'project', perspective: 'structure', flowId: null, aroundChanges: false, selection: { kind: 'none' } },
   context: {} as AnswerCard['context'],
   reply: { status: 'pending' },
 })

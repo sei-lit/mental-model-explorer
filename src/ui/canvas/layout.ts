@@ -99,6 +99,6 @@ export function smoothPath(points: readonly Position[]): string {
   return path
 }
 
-export function layoutKey(scopeId: string, perspective: string, flowId: string | null): string {
-  return `${scopeId}|${perspective}|${perspective === 'flow' ? flowId : ''}`
+export function layoutKey(scopeId: string, perspective: string, flowId: string | null, aroundChanges: boolean): string {
+  return `${scopeId}|${perspective}|${perspective === 'flow' ? flowId : ''}|${aroundChanges ? 'changes' : ''}`
 }

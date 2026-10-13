@@ -85,7 +85,7 @@ describe('exploration reducer', () => {
   it('restores a viewpoint captured with an earlier answer', () => {
     const state = run(
       { type: 'enterScope', scopeId: 'pkg.Data' },
-      { type: 'restore', viewpoint: { scopeId: 'mod.Screen', perspective: 'flow', flowId: 'flow.load', selection: { kind: 'node', nodeId: 'type.VM' } } },
+      { type: 'restore', viewpoint: { scopeId: 'mod.Screen', perspective: 'flow', flowId: 'flow.load', aroundChanges: false, selection: { kind: 'node', nodeId: 'type.VM' } } },
     )
 
     expect(state).toMatchObject({ scopeId: 'mod.Screen', perspective: 'flow', selection: { kind: 'node', nodeId: 'type.VM' } })
@@ -98,5 +98,21 @@ describe('exploration reducer', () => {
       selection: { kind: 'node', nodeId: i % 2 === 0 ? 'pkg.Data' : 'pkg.Domain' },
     }))
     expect(run(...selects).trail).toHaveLength(TRAIL_LIMIT)
+  })
+
+  it('starts narrowed to the changes when a change set is laid over the graph, and can be widened', () => {
+    const changed = miniGraph()
+    changed.changes = { title: 'PR', url: null, description: '', base: 'abc', nodeIds: ['type.View'], files: [], warnings: [] }
+    const changedIndex = new GraphIndex(changed)
+    const initial = initialExploration(changedIndex)
+    const widened = createExplorationReducer(changedIndex)(initial, { type: 'setAroundChanges', on: false })
+
+    expect(initial.aroundChanges).toBe(true)
+    expect(widened.aroundChanges).toBe(false)
+    expect(widened.history).toHaveLength(2)
+  })
+
+  it('cannot narrow to changes when there are none', () => {
+    expect(run({ type: 'setAroundChanges', on: true }).aroundChanges).toBe(false)
   })
 })

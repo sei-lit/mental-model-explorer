@@ -19,6 +19,8 @@ export const contextBudget = {
   relationsPerNode: 12,
   aggregatedExamples: 8,
   codeContextLines: 3,
+  changedNodes: 20,
+  changedFiles: 10,
 } as const
 
 export interface NodeBrief {
@@ -103,8 +105,31 @@ export interface QuestionContext {
   nearby: RelationBrief[]
   trail: string[]
   previous: { question: string; summary: string } | null
+  /** The pull request laid over the graph, with what it changed inside the current scope. */
+  changes: ChangesBrief | null
   /** How much was left out to stay within the budget. Shown to the user next to the context preview. */
-  omitted: { visibleNodes: number; visibleEdges: number; nearbyRelations: number; trailSteps: number; aggregatedExamples: number; usedBy: number }
+  omitted: {
+    visibleNodes: number
+    visibleEdges: number
+    nearbyRelations: number
+    trailSteps: number
+    aggregatedExamples: number
+    usedBy: number
+    changedNodes: number
+    changedFiles: number
+  }
+}
+
+export interface ChangesBrief {
+  title: string
+  url: string | null
+  description: string
+  warnings: string[]
+  /** Changed declarations inside the scope, those inside the subject first. */
+  inScope: NodeBrief[]
+  outsideScope: number
+  /** Changed files the analysis has no declarations for (deleted files, resources, build scripts). */
+  filesWithoutDeclarations: { path: string; status: string }[]
 }
 
 const perspectiveMeaning: Record<Perspective, string> = {
@@ -123,7 +148,7 @@ export interface BuildContextInput {
 
 export function buildQuestionContext({ index, exploration, target, question, previous = null }: BuildContextInput): QuestionContext {
   const view = projectView(index, exploration)
-  const omitted = { visibleNodes: 0, visibleEdges: 0, nearbyRelations: 0, trailSteps: 0, aggregatedExamples: 0, usedBy: 0 }
+  const omitted = { visibleNodes: 0, visibleEdges: 0, nearbyRelations: 0, trailSteps: 0, aggregatedExamples: 0, usedBy: 0, changedNodes: 0, changedFiles: 0 }
 
   const subject = buildSubject(index, target, view, omitted)
   const subjectNodeIds = subjectNodes(target)
@@ -141,7 +166,27 @@ export function buildQuestionContext({ index, exploration, target, question, pre
     nearby,
     trail,
     previous,
+    changes: buildChanges(index, exploration.scopeId, subjectNodeIds, omitted),
     omitted,
+  }
+}
+
+function buildChanges(index: GraphIndex, scopeId: string, subjectNodeIds: string[], omitted: QuestionContext['omitted']): ChangesBrief | null {
+  const changes = index.graph.changes
+  if (!changes) return null
+  const inSubject = (id: string) => subjectNodeIds.some((subjectId) => index.isWithin(id, subjectId))
+  const inScope = changes.nodeIds.filter((id) => index.isWithin(id, scopeId)).sort((a, b) => Number(inSubject(b)) - Number(inSubject(a)))
+  const files = changes.files.filter((file) => file.nodeIds.length === 0)
+  omitted.changedNodes = Math.max(0, inScope.length - contextBudget.changedNodes)
+  omitted.changedFiles = Math.max(0, files.length - contextBudget.changedFiles)
+  return {
+    title: changes.title,
+    url: changes.url,
+    description: changes.description,
+    warnings: changes.warnings,
+    inScope: inScope.slice(0, contextBudget.changedNodes).map((id) => brief(index, index.node(id))),
+    outsideScope: changes.nodeIds.length - inScope.length,
+    filesWithoutDeclarations: files.slice(0, contextBudget.changedFiles).map(({ path, status }) => ({ path, status })),
   }
 }
 
@@ -156,7 +201,7 @@ function buildLens(index: GraphIndex, viewpoint: Viewpoint, view: VisibleView): 
     showing:
       view.mode === 'code'
         ? `「${scope.name}」のコードを読んでいる`
-        : `「${scope.name}」の内部（${childKinds.join(' / ')} の粒度）を表示している`,
+        : `「${scope.name}」の内部（${childKinds.join(' / ')} の粒度）を表示している${narrowing(view)}`,
     flow: flow && {
       id: flow.id,
       name: flow.name,
@@ -175,6 +220,11 @@ function buildLens(index: GraphIndex, viewpoint: Viewpoint, view: VisibleView): 
       }),
     },
   }
+}
+
+function narrowing(view: VisibleView): string {
+  if (view.mode !== 'graph' || !view.changeFocus?.changedHere) return ''
+  return `。PR で変更された要素とその直接の相手だけに絞っている（ほか ${view.changeFocus.hiddenNodes} 個は非表示）`
 }
 
 function buildSubject(index: GraphIndex, target: QuestionTarget, view: VisibleView, omitted: QuestionContext['omitted']): Subject {
@@ -366,6 +416,8 @@ function describeStep(index: GraphIndex, step: TrailStep): string | null {
       return step.selection.kind === 'none' ? null : `${describeTarget(index, step.selection)} を選択した`
     case 'ask':
       return `質問した: 「${step.question}」`
+    case 'aroundChanges':
+      return step.on ? '変更とその直接の相手だけの表示にした' : '変更以外も含む全体の表示に戻した'
   }
 }
 
@@ -475,5 +527,6 @@ export function referencedIds(context: QuestionContext): Set<string> {
   for (const edge of context.visible.edges) for (const id of edge.edgeIds) ids.add(id)
   context.nearby.forEach(addRelation)
   for (const step of context.lens.flow?.steps ?? []) ids.add(step.edgeId).add(step.from.id).add(step.to.id)
+  for (const node of context.changes?.inScope ?? []) ids.add(node.id)
   return ids
 }
