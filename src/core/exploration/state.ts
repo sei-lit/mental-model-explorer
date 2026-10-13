@@ -81,9 +81,10 @@ export function createExplorationReducer(index: GraphIndex) {
     switch (action.type) {
       case 'enterScope': {
         if (action.scopeId === state.scopeId || !canEnter(index, action.scopeId)) return state
-        // Entering a node from the outside is the usual way to drill in, so the entered node stays
-        // selected; questions asked right after entering are about that node.
-        const selection: Selection = { kind: 'node', nodeId: action.scopeId }
+        // Drilling in keeps the entered node selected, so a question right after entering is about it.
+        // Going back up selects the child the user came from, so they can see where they were.
+        const cameFrom = index.childOfScopeContaining(action.scopeId, state.scopeId)
+        const selection: Selection = { kind: 'node', nodeId: cameFrom?.id ?? action.scopeId }
         return navigate(state, { ...viewpointOf(state), scopeId: action.scopeId, selection }, { action: 'enter', scopeId: action.scopeId })
       }
       case 'select': {

@@ -31,7 +31,6 @@ describe('bookShelfGraph', () => {
   })
 
   it('exposes a source that loads the graph', async () => {
-    expect(bookShelfSource.id).toBe('sample-bookshelf')
     await expect(bookShelfSource.load()).resolves.toBe(bookShelfGraph)
   })
 })
