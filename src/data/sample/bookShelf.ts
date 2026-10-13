@@ -547,7 +547,5 @@ const flows: Flow[] = [
 export const bookShelfGraph: ProjectGraph = { rootId: 'project', nodes, edges, flows }
 
 export const bookShelfSource: ProjectSource = {
-  id: 'sample-bookshelf',
-  label: 'BookShelf (サンプル iOS アプリ)',
   load: async () => bookShelfGraph,
 }

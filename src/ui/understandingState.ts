@@ -12,10 +12,10 @@ export interface AnswerCard {
   /** Where the user was when asking, so the card can bring that screen back later. */
   viewpoint: Viewpoint
   context: QuestionContext
-  status: 'pending' | 'done' | 'error'
-  result?: AskResult
-  error?: string
+  reply: Reply
 }
+
+export type Reply = { status: 'pending' } | { status: 'done'; result: AskResult } | { status: 'error'; error: string }
 
 export interface UnderstandingState {
   /** Newest first. */
@@ -51,11 +51,11 @@ export function understandingReducer(state: UnderstandingState, action: Understa
     case 'asked':
       return { ...state, cards: [action.card, ...state.cards], activeCardId: action.card.id, whatIfCardId: null }
     case 'answered':
-      return updateCard(state, action.id, { status: 'done', result: action.result, error: undefined })
+      return updateCard(state, action.id, { status: 'done', result: action.result })
     case 'failed':
       return updateCard(state, action.id, { status: 'error', error: action.error })
     case 'retry':
-      return updateCard(state, action.id, { status: 'pending', error: undefined })
+      return updateCard(state, action.id, { status: 'pending' })
     case 'activate':
       return { ...state, activeCardId: action.id, whatIfCardId: action.id === state.whatIfCardId ? action.id : null }
     case 'hover':
@@ -70,10 +70,19 @@ export function understandingReducer(state: UnderstandingState, action: Understa
 }
 
 /** Results are matched by card id, so answers that arrive out of order never touch another card. */
-function updateCard(state: UnderstandingState, id: string, patch: Partial<AnswerCard>): UnderstandingState {
-  return { ...state, cards: state.cards.map((card) => (card.id === id ? { ...card, ...patch } : card)) }
+function updateCard(state: UnderstandingState, id: string, reply: Reply): UnderstandingState {
+  return { ...state, cards: state.cards.map((card) => (card.id === id ? { ...card, reply } : card)) }
 }
 
-export function lastDoneCard(cards: readonly AnswerCard[]): AnswerCard | undefined {
-  return cards.find((card) => card.status === 'done')
+export function resultOf(card: AnswerCard | null | undefined): AskResult | null {
+  return card?.reply.status === 'done' ? card.reply.result : null
+}
+
+/** The latest answered question, carried into the next question so follow-ups like "それはなぜ？" make sense. */
+export function previousTurn(cards: readonly AnswerCard[]): { question: string; summary: string } | null {
+  for (const card of cards) {
+    const result = resultOf(card)
+    if (result) return { question: card.question, summary: result.answer.summary }
+  }
+  return null
 }

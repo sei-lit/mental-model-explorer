@@ -26,7 +26,7 @@ import { ask, type ClientConfig } from './api/client'
 import { GraphCanvas } from './canvas/GraphCanvas'
 import { layoutKey } from './canvas/layout'
 import { computeOverlay, emptyOverlay, type GraphView } from './overlay'
-import { initialUnderstanding, lastDoneCard, understandingReducer, type AnswerCard } from './understandingState'
+import { initialUnderstanding, previousTurn, resultOf, understandingReducer, type AnswerCard } from './understandingState'
 
 const noGraph = { nodes: [], edges: [] } satisfies Pick<GraphView, 'nodes' | 'edges'>
 
@@ -50,30 +50,28 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
 
   const activeCard = understanding.cards.find((card) => card.id === understanding.activeCardId) ?? null
   const whatIfShown = activeCard !== null && understanding.whatIfCardId === activeCard.id
+  const activeResult = resultOf(activeCard)
   const overlay = useMemo(
     () =>
-      activeCard?.result
+      activeResult
         ? computeOverlay(index, view.mode === 'graph' ? view : noGraph, {
-            answer: activeCard.result.answer,
+            answer: activeResult.answer,
             hoverRefs: understanding.hoverRefs,
             whatIf: { shown: whatIfShown, mode: understanding.whatIfMode },
           })
         : emptyOverlay,
-    [index, view, activeCard?.result, understanding.hoverRefs, whatIfShown, understanding.whatIfMode],
+    [index, view, activeResult, understanding.hoverRefs, whatIfShown, understanding.whatIfMode],
   )
 
   // The explicit override only applies to the selection it was made on.
   const wholeViewOverride = wholeViewFor !== null && sameSelection(wholeViewFor, selection)
-  const target: QuestionTarget = wholeViewOverride ? { kind: 'view' } : targetFromSelection(selection)
+  const target = useMemo<QuestionTarget>(() => (wholeViewOverride ? { kind: 'view' } : targetFromSelection(selection)), [wholeViewOverride, selection])
   const targetLabel = describeTarget(index, target)
-  const previous = lastDoneCard(understanding.cards)
-  const previousTurn = previous?.result ? { question: previous.question, summary: previous.result.answer.summary } : null
+  const previous = useMemo(() => previousTurn(understanding.cards), [understanding.cards])
 
   const contextPreview = useMemo(
-    () => buildQuestionContext({ index, exploration, target, question: question.trim() || '（質問を入力するとここに入ります）', previous: previousTurn }),
-    // `previousTurn` is rebuilt every render; its content only changes with the cards.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [index, exploration, target.kind, targetLabel, question, previous?.id],
+    () => buildQuestionContext({ index, exploration, target, question: question.trim() || '（質問を入力するとここに入ります）', previous }),
+    [index, exploration, target, question, previous],
   )
 
   const outlinedNodeIds = useMemo(() => {
@@ -95,7 +93,7 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
   const submit = () => {
     const text = question.trim()
     if (text === '') return
-    const context = buildQuestionContext({ index, exploration, target, question: text, previous: previousTurn })
+    const context = buildQuestionContext({ index, exploration, target, question: text, previous })
     cardSequence.current += 1
     const card: AnswerCard = {
       id: `card-${cardSequence.current}`,
@@ -104,7 +102,7 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
       targetLabel,
       viewpoint: viewpointOf(exploration),
       context,
-      status: 'pending',
+      reply: { status: 'pending' },
     }
     dispatch({ type: 'recordQuestion', question: text })
     understand({ type: 'asked', card })

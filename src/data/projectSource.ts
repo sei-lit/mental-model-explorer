@@ -5,7 +5,5 @@ import type { ProjectGraph } from '../core/model/graph'
  * repository analyzer (e.g. GitHub import) can replace the bundled sample without UI changes.
  */
 export interface ProjectSource {
-  readonly id: string
-  readonly label: string
   load(): Promise<ProjectGraph>
 }

@@ -9,9 +9,6 @@ export interface ClientConfig {
 }
 
 export class HttpProjectSource implements ProjectSource {
-  readonly id = 'http'
-  readonly label = 'サーバーのプロジェクト'
-
   async load(): Promise<ProjectGraph> {
     return getJson<ProjectGraph>('/api/project')
   }

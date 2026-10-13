@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { Answer } from '../core/understanding/answer'
+import type { AskResult } from '../core/understanding/responder'
 import type { GraphIndex } from '../core/model/graphIndex'
 import { perspectiveLabel } from './labels'
 import type { AnswerCard } from './understandingState'
@@ -63,13 +63,13 @@ function Card({ card, active, index, whatIfCardId, onActivate, onRestore, onRetr
           >
             この時の画面に戻る
           </button>
-          {card.result && <span className="muted">{card.result.source === 'claude-cli' ? 'claude CLI' : 'モック'} の回答</span>}
+          {card.reply.status === 'done' && <span className="muted">{card.reply.result.source === 'claude-cli' ? 'claude CLI' : 'モック'} の回答</span>}
         </div>
       </header>
-      {card.status === 'pending' && <p className="pending">考えています…</p>}
-      {card.status === 'error' && (
+      {card.reply.status === 'pending' && <p className="pending">考えています…</p>}
+      {card.reply.status === 'error' && (
         <div className="error-box">
-          <p>{card.error}</p>
+          <p>{card.reply.error}</p>
           <button
             onClick={(event) => {
               event.stopPropagation()
@@ -80,10 +80,10 @@ function Card({ card, active, index, whatIfCardId, onActivate, onRestore, onRetr
           </button>
         </div>
       )}
-      {card.status === 'done' && card.result && (
+      {card.reply.status === 'done' && (
         <AnswerBody
           card={card}
-          answer={card.result.answer}
+          result={card.reply.result}
           index={index}
           whatIfShown={whatIfCardId === card.id}
           onFocusRef={onFocusRef}
@@ -99,7 +99,7 @@ function Card({ card, active, index, whatIfCardId, onActivate, onRestore, onRetr
 
 interface AnswerBodyProps {
   card: AnswerCard
-  answer: Answer
+  result: AskResult
   index: GraphIndex
   whatIfShown: boolean
   onFocusRef: (ref: string) => void
@@ -109,8 +109,8 @@ interface AnswerBodyProps {
   onHideWhatIf: () => void
 }
 
-function AnswerBody({ card, answer, index, whatIfShown, onFocusRef, onFollowUp, onHover, onShowWhatIf, onHideWhatIf }: AnswerBodyProps) {
-  const issues = card.result?.issues ?? []
+function AnswerBody({ card, result, index, whatIfShown, onFocusRef, onFollowUp, onHover, onShowWhatIf, onHideWhatIf }: AnswerBodyProps) {
+  const { answer, issues } = result
   return (
     <div className="answer-body">
       <p className="summary">{answer.summary}</p>
