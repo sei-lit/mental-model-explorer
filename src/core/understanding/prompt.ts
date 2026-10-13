@@ -11,6 +11,8 @@ context を手がかりに、ユーザーが何について問うているかを
   context.trail はそこに至るまでの探索、context.previous は直前の回答です。
 - context.changes があれば、ユーザーはその PR を読んでいます。changes.inScope は今の範囲で PR が変更した宣言です。
   PR について問われたら、変更された宣言と、それに依存する・それが依存する要素の関係から説明してください。
+- context.module があれば、ユーザーはそのモジュールを理解するページを見ています。module.brief はページに出している要約、
+  module のソースはメッセージ末尾にあります。ソースを根拠に答え、refs には資料の宣言 ID / エッジ ID を使ってください。
 - Claim の provenance が "observed" のものはコードで確認できる事実、"inferred" のものは推測です。
   推測に基づく部分は文中で推測だとわかるように書いてください。
 - segments の各文には、その文が説明しているノード ID / エッジ ID を refs に入れてください。
@@ -22,7 +24,10 @@ context を手がかりに、ユーザーが何について問うているかを
 - 質問と同じ言語で、簡潔に答えてください。`
 
 export function renderUserMessage(context: QuestionContext): string {
-  return `context:\n${JSON.stringify(context, null, 2)}\n\n質問: ${context.question}`
+  if (!context.module) return `context:\n${JSON.stringify(context, null, 2)}\n\n質問: ${context.question}`
+  // The source goes after the JSON as plain text: escaped into a JSON string it loses its line structure.
+  const { dossier, citableIds: _ids, ...module } = context.module
+  return `context:\n${JSON.stringify({ ...context, module }, null, 2)}\n\nモジュールの資料:\n${dossier}\n\n質問: ${context.question}`
 }
 
 function withoutMetaSchema(schema: Record<string, unknown>): Record<string, unknown> {

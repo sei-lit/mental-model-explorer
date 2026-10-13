@@ -4,12 +4,16 @@ import type { ProjectGraph } from '../src/core/model/graph'
 import { GraphIndex } from '../src/core/model/graphIndex'
 import { AnswerFormatError, validateAnswer } from '../src/core/understanding/answer'
 import { referencedIds, type QuestionContext } from '../src/core/understanding/context'
+import { citableIds, renderDossier } from '../src/core/understanding/dossier'
+import { BriefFormatError } from '../src/core/understanding/moduleBrief'
 import type { AskResult, Responder } from '../src/core/understanding/responder'
 import { ClaudeCliError } from './claudeCliResponder'
+import { NotAModuleError, type ModuleBriefService } from './moduleBriefs'
 
 export interface ApiOptions {
   graph: ProjectGraph
   responder: Responder
+  briefs: ModuleBriefService
   /** Shown in the UI so the user knows which model answers. */
   model: string | null
 }
@@ -66,16 +70,26 @@ function parseUrl(text: string): URL | null {
   }
 }
 
-export async function handleAsk(index: GraphIndex, responder: Responder, body: unknown): Promise<AskResult> {
-  const context = (body as { context?: unknown } | null)?.context
-  if (!isQuestionContext(context)) throw new BadRequestError('context が不正です')
-  if (context.question.trim() === '') throw new BadRequestError('context.question が必要です')
-  if (context.question.length > MAX_QUESTION_LENGTH) throw new BadRequestError('質問が長すぎます')
+export async function handleAsk(index: GraphIndex, responder: Responder, briefs: ModuleBriefService, body: unknown): Promise<AskResult> {
+  const { context: received, moduleId } = (body ?? {}) as { context?: unknown; moduleId?: unknown }
+  if (!isQuestionContext(received)) throw new BadRequestError('context が不正です')
+  if (received.question.trim() === '') throw new BadRequestError('context.question が必要です')
+  if (received.question.length > MAX_QUESTION_LENGTH) throw new BadRequestError('質問が長すぎます')
+  if (moduleId !== undefined && typeof moduleId !== 'string') throw new BadRequestError('moduleId が不正です')
+  const context: QuestionContext = { ...received, module: moduleId === undefined ? null : attachModule(briefs, moduleId) }
   const raw = await responder.ask(context)
   // Validate on the server as well: the server owns the graph, and the browser should never
   // receive ids it would have to second-guess.
   const { answer, issues } = validateAnswer(raw, index, referencedIds(context))
   return { answer, issues, source: responder.kind }
+}
+
+/** The question is about the brief the page shows, so a module without a generated brief is refused rather than generated here. */
+function attachModule(briefs: ModuleBriefService, moduleId: string): QuestionContext['module'] {
+  const brief = briefs.cachedBrief(moduleId)
+  if (!brief) throw new BadRequestError('このモジュールの要約がまだありません。先にモジュールのページを開いてください')
+  const dossier = briefs.dossier(moduleId)
+  return { moduleId, name: dossier.name, hash: brief.hash, brief: brief.brief, citableIds: [...citableIds(dossier)], dossier: renderDossier(dossier) }
 }
 
 type Next = (error?: unknown) => void
@@ -96,13 +110,18 @@ export function createApiMiddleware(options: ApiOptions) {
       if (req.method === 'GET' && url.pathname === '/api/project') return sendProject(req, res, projectJson, projectGzip)
       if (req.method === 'GET' && url.pathname === '/api/config') return sendJson(res, 200, config)
       if (req.method === 'POST' && url.pathname === '/api/ask') {
-        const result = await handleAsk(index, options.responder, await readJson(req))
+        const result = await handleAsk(index, options.responder, options.briefs, await readJson(req))
         return sendJson(res, 200, result)
+      }
+      if (req.method === 'GET' && url.pathname === '/api/module-brief') {
+        const moduleId = url.searchParams.get('id')
+        if (!moduleId) throw new BadRequestError('id が必要です')
+        return sendJson(res, 200, await options.briefs.brief(moduleId))
       }
       sendJson(res, 404, { error: 'not found' })
     } catch (error) {
-      if (error instanceof BadRequestError) return sendJson(res, 400, { error: error.message })
-      if (error instanceof ClaudeCliError || error instanceof AnswerFormatError) return sendJson(res, 502, { error: error.message })
+      if (error instanceof BadRequestError || error instanceof NotAModuleError) return sendJson(res, 400, { error: error.message })
+      if (error instanceof ClaudeCliError || error instanceof AnswerFormatError || error instanceof BriefFormatError) return sendJson(res, 502, { error: error.message })
       next(error)
     }
   }

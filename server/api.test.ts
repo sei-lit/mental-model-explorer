@@ -7,10 +7,13 @@ import { createExplorationReducer, initialExploration } from '../src/core/explor
 import { buildQuestionContext } from '../src/core/understanding/context'
 import { BadRequestError, handleAsk, isTrustedRequest } from './api'
 import { ClaudeCliError, parseCliResult } from './claudeCliResponder'
+import { MockBriefGenerator } from '../src/core/understanding/briefGenerator'
+import { ModuleBriefService } from './moduleBriefs'
 
 const index = new GraphIndex(miniGraph())
 const exploration = createExplorationReducer(index)(initialExploration(index), { type: 'select', selection: { kind: 'node', nodeId: 'pkg.Data' } })
 const contextAsking = (question: string) => buildQuestionContext({ index, exploration, target: { kind: 'node', nodeId: 'pkg.Data' }, question })
+const newBriefs = () => new ModuleBriefService(index, () => null, new MockBriefGenerator(), null, null)
 
 class FixedResponder implements Responder {
   readonly kind = 'claude-cli' as const
@@ -32,7 +35,7 @@ const answerWithGhost: Answer = {
 
 describe('handleAsk', () => {
   it('returns the validated answer with issues and the responder that produced it', async () => {
-    const result = await handleAsk(index, new FixedResponder(answerWithGhost), { context: contextAsking('なぜ？') })
+    const result = await handleAsk(index, new FixedResponder(answerWithGhost), newBriefs(), { context: contextAsking('なぜ？') })
 
     expect(result.source).toBe('claude-cli')
     expect(result.answer.segments[0]?.refs).toEqual(['pkg.Data'])
@@ -46,10 +49,32 @@ describe('handleAsk', () => {
   it('rejects a request without a question before calling the responder', async () => {
     const responder = new FixedResponder(answerWithGhost)
 
-    await expect(handleAsk(index, responder, { context: contextAsking('  ') })).rejects.toThrow(BadRequestError)
-    await expect(handleAsk(index, responder, { context: { question: 'なぜ？' } })).rejects.toThrow(BadRequestError)
-    await expect(handleAsk(index, responder, {})).rejects.toThrow(BadRequestError)
+    await expect(handleAsk(index, responder, newBriefs(), { context: contextAsking('  ') })).rejects.toThrow(BadRequestError)
+    await expect(handleAsk(index, responder, newBriefs(), { context: { question: 'なぜ？' } })).rejects.toThrow(BadRequestError)
+    await expect(handleAsk(index, responder, newBriefs(), {})).rejects.toThrow(BadRequestError)
     expect(responder.received).toEqual([])
+  })
+
+  it('refuses a module question until the brief the page shows exists', async () => {
+    await expect(handleAsk(index, new FixedResponder(answerWithGhost), newBriefs(), { context: contextAsking('何をする？'), moduleId: 'mod.Screen' })).rejects.toThrow(
+      /要約がまだありません/,
+    )
+  })
+
+  it('attaches the module dossier on the server and lets the answer cite its declarations', async () => {
+    const briefs = newBriefs()
+    await briefs.brief('mod.Screen')
+    const responder = new FixedResponder(answerWithGhost)
+    const forged = { ...contextAsking('何をする？'), module: { citableIds: ['type.Ghost'] } }
+
+    const result = await handleAsk(index, responder, briefs, { context: forged, moduleId: 'mod.Screen' })
+
+    const sent = responder.received[0] as { module: { moduleId: string; dossier: string } }
+    expect(sent.module.moduleId).toBe('mod.Screen')
+    expect(sent.module.dossier).toContain('method.VM.load')
+    // Cited from the dossier now; the id the browser tried to add is still unknown.
+    expect(result.answer.segments[0]?.refs).toEqual(['pkg.Data', 'method.VM.load'])
+    expect(result.issues).toEqual([{ kind: 'unknownRef', where: 'segment', ref: 'type.Ghost' }])
   })
 })
 
