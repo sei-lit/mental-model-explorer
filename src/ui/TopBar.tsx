@@ -1,4 +1,4 @@
-import type { ExplorationAction, ExplorationState, Perspective } from '../core/exploration/state'
+import { flowsThrough, type ExplorationAction, type ExplorationState, type Perspective } from '../core/exploration/state'
 import type { GraphIndex } from '../core/model/graphIndex'
 import type { ClientConfig } from './api/client'
 import { perspectiveLabel } from './labels'
@@ -57,18 +57,27 @@ export function TopBar({ index, exploration, config, dispatch }: TopBarProps) {
           </button>
         ))}
         {exploration.perspective === 'flow' && exploration.flowId && (
-          <select value={exploration.flowId} onChange={(event) => dispatch({ type: 'setFlow', flowId: event.target.value })}>
-            {index.graph.flows.map((flow) => (
-              <option key={flow.id} value={flow.id}>
-                {flow.name}
-              </option>
-            ))}
-          </select>
+          <FlowSelect index={index} scopeId={exploration.scopeId} flowId={exploration.flowId} onChange={(flowId) => dispatch({ type: 'setFlow', flowId })} />
         )}
       </div>
       <div className="responder-status" title="回答の生成元">
         AI: {config.responder === 'claude-cli' ? `claude CLI${config.model ? ` (${config.model})` : ''}` : 'モック'}
       </div>
     </header>
+  )
+}
+
+function FlowSelect({ index, scopeId, flowId, onChange }: { index: GraphIndex; scopeId: string; flowId: string; onChange: (flowId: string) => void }) {
+  const relevant = new Set(flowsThrough(index, scopeId))
+  const option = (flow: { id: string; name: string }) => (
+    <option key={flow.id} value={flow.id}>
+      {flow.name}
+    </option>
+  )
+  return (
+    <select value={flowId} onChange={(event) => onChange(event.target.value)}>
+      <optgroup label={`この範囲を通る流れ（${relevant.size}）`}>{index.graph.flows.filter((flow) => relevant.has(flow.id)).map(option)}</optgroup>
+      <optgroup label="ほかの流れ">{index.graph.flows.filter((flow) => !relevant.has(flow.id)).map(option)}</optgroup>
+    </select>
   )
 }

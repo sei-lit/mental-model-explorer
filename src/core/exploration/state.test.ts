@@ -39,6 +39,16 @@ describe('exploration reducer', () => {
     expect(state).toMatchObject({ scopeId: 'mod.Screen', perspective: 'responsibility', selection: { kind: 'node', nodeId: 'type.VM' } })
   })
 
+  it('picks a flow that passes through the scope when switching to the flow perspective', () => {
+    const graph = miniGraph()
+    graph.flows.unshift({ id: 'flow.elsewhere', name: 'elsewhere', description: '', trigger: '', steps: [{ edgeId: 'c.impl-get', note: '' }] })
+    const local = new GraphIndex(graph)
+    const reduceLocal = createExplorationReducer(local)
+    const state = [{ type: 'enterScope', scopeId: 'pkg.Feature' } as const, { type: 'setPerspective', perspective: 'flow' } as const].reduce(reduceLocal, initialExploration(local))
+
+    expect(state.flowId).toBe('flow.load')
+  })
+
   it('goes back and forward through viewpoints', () => {
     const entered = run({ type: 'enterScope', scopeId: 'pkg.Data' }, { type: 'enterScope', scopeId: 'mod.Impl' })
     const back = reduce(entered, { type: 'back' })

@@ -120,7 +120,8 @@ export const flowDescription = '静的解析で推定した呼び出しの流れ
 export function deriveFlows(callEdges: readonly GraphEdge[], options: FlowOptions): Flow[] {
   const maxSteps = options.maxSteps ?? 12
   const minSteps = options.minSteps ?? 3
-  const maxFlows = options.maxFlows ?? 40
+  // Large apps have dozens of feature modules; a small global cap leaves most of them without any flow.
+  const maxFlows = options.maxFlows ?? 300
 
   const outgoing = new Map<string, GraphEdge[]>()
   const called = new Set<string>()

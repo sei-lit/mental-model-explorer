@@ -23,6 +23,7 @@ import { Inspector } from './Inspector'
 import { Legend } from './Legend'
 import { TopBar } from './TopBar'
 import { ask, type ClientConfig } from './api/client'
+import { CanvasErrorBoundary } from './canvas/CanvasErrorBoundary'
 import { GraphCanvas } from './canvas/GraphCanvas'
 import { layoutKey } from './canvas/layout'
 import { computeOverlay, emptyOverlay, type GraphView } from './overlay'
@@ -159,21 +160,22 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
       <div className="main">
         <div className="canvas-area">
           {view.mode === 'graph' ? (
-            <GraphCanvas
-              key={layoutKey(scopeId, perspective, flowId)}
-              index={index}
-              view={view}
-              layoutKey={layoutKey(scopeId, perspective, flowId)}
-              perspective={perspective}
-              selection={selection}
-              overlay={overlay}
-              outlinedNodeIds={outlinedNodeIds}
-              viewports={viewports}
-              onSelectNode={selectNode}
-              onSelectEdge={selectViewEdge}
-              onEnter={enter}
-              onClearSelection={clearSelection}
-            />
+            <CanvasErrorBoundary key={layoutKey(scopeId, perspective, flowId)}>
+              <GraphCanvas
+                index={index}
+                view={view}
+                layoutKey={layoutKey(scopeId, perspective, flowId)}
+                perspective={perspective}
+                selection={selection}
+                overlay={overlay}
+                outlinedNodeIds={outlinedNodeIds}
+                viewports={viewports}
+                onSelectNode={selectNode}
+                onSelectEdge={selectViewEdge}
+                onEnter={enter}
+                onClearSelection={clearSelection}
+              />
+            </CanvasErrorBoundary>
           ) : (
             <CodeView
               index={index}
