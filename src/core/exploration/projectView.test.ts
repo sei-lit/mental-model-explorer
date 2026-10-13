@@ -35,6 +35,14 @@ describe('projectView', () => {
     expect(view.edges.find((edge) => edge.id === 'pkg.Data|implements|pkg.Domain')?.concerns).toEqual([])
   })
 
+  it('uses the layer rules that come with the graph', () => {
+    const graph = miniGraph()
+    graph.layerRules = { presentation: ['presentation', 'domain', 'data'], domain: ['domain'], data: ['data', 'domain'] }
+    const view = graphView(projectView(new GraphIndex(graph), at('project')))
+
+    expect(view.edges.find((edge) => edge.id === 'pkg.Feature|depends_on|pkg.Data')?.concerns).toEqual([])
+  })
+
   it('represents outside nodes at the level where their path leaves the scope', () => {
     const view = graphView(projectView(index, at('mod.Impl')))
 

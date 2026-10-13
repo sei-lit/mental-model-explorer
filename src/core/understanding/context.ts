@@ -30,6 +30,11 @@ export interface NodeBrief {
   summary: string | null
 }
 
+export interface EndpointBrief extends NodeBrief {
+  responsibility: Claim | null
+  constraints: Claim[]
+}
+
 export interface RelationBrief {
   id: string
   source: { id: string; name: string }
@@ -66,7 +71,11 @@ export type Subject =
   | { kind: 'nodes'; nodes: NodeDetail[]; relationsBetween: RelationBrief[] }
   | {
       kind: 'edge'
-      drawn: { source: NodeBrief; target: NodeBrief }
+      /**
+       * Both ends with their stated responsibility and constraints: "why does this dependency exist"
+       * is usually answered by the design intent of the ends, not by the edges themselves.
+       */
+      drawn: { source: EndpointBrief; target: EndpointBrief }
       /** One drawn edge can stand for many graph edges at a coarse scope. */
       total: number
       byRelation: Record<string, number>
@@ -187,7 +196,7 @@ function buildSubject(index: GraphIndex, target: QuestionTarget, view: VisibleVi
       for (const edge of edges) byRelation[edge.relation] = (byRelation[edge.relation] ?? 0) + 1
       return {
         kind: 'edge',
-        drawn: { source: brief(index, index.node(target.source)), target: brief(index, index.node(target.target)) },
+        drawn: { source: endpoint(index, index.node(target.source)), target: endpoint(index, index.node(target.target)) },
         total: edges.length,
         byRelation,
         examples: examples.map((edge) => relation(index, edge)),
@@ -369,6 +378,10 @@ export function brief(index: GraphIndex, node: GraphNode): NodeBrief {
     layer: layerOf(index, node.id),
     summary: node.summary ?? null,
   }
+}
+
+function endpoint(index: GraphIndex, node: GraphNode): EndpointBrief {
+  return { ...brief(index, node), responsibility: node.responsibility ?? null, constraints: node.constraints ?? [] }
 }
 
 function detail(index: GraphIndex, node: GraphNode, omitted: QuestionContext['omitted']): NodeDetail {

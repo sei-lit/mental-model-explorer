@@ -1,7 +1,7 @@
 import { exec } from 'node:child_process'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createServer, type ServerResponse } from 'node:http'
-import { dirname, extname, join, normalize, sep } from 'node:path'
+import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { createApiMiddleware } from './api'
@@ -9,6 +9,7 @@ import { defaultSettings, prepareApi } from './setup'
 
 const usage = `Usage: mental-model-explorer [options]
 
+  --project <path>  開く Gradle Kotlin プロジェクトのルート (default: 同梱のサンプル)
   --port <n>        待ち受けるポート (default: 5178)
   --model <name>    claude CLI に渡すモデル (default: ${defaultSettings.model})
   --claude <path>   claude コマンドのパス (default: claude)
@@ -18,6 +19,7 @@ const usage = `Usage: mental-model-explorer [options]
 
 const { values } = parseArgs({
   options: {
+    project: { type: 'string' },
     port: { type: 'string', default: '5178' },
     model: { type: 'string', default: defaultSettings.model },
     claude: { type: 'string', default: defaultSettings.claudeCommand },
@@ -44,13 +46,22 @@ if (!existsSync(join(clientDir, 'index.html'))) {
   process.exit(1)
 }
 
-const { options, mockReason } = await prepareApi({
-  ...defaultSettings,
-  forceMock: values.mock,
-  claudeCommand: values.claude,
-  model: values.model,
-})
+let prepared: Awaited<ReturnType<typeof prepareApi>>
+try {
+  prepared = await prepareApi({
+    ...defaultSettings,
+    forceMock: values.mock,
+    projectPath: values.project === undefined ? null : resolve(process.cwd(), values.project),
+    claudeCommand: values.claude,
+    model: values.model,
+  })
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error)
+  process.exit(1)
+}
+const { options, mockReason } = prepared
 const api = createApiMiddleware(options)
+const projectName = options.graph.nodes.find((node) => node.id === options.graph.rootId)?.name ?? options.graph.rootId
 
 const server = createServer((req, res) => {
   void api(req, res, (error) => {
@@ -68,6 +79,7 @@ const server = createServer((req, res) => {
 server.listen(port, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${port}`
   console.log(`Mental Model Explorer: ${url}`)
+  console.log(`Project: ${projectName} (${options.graph.nodes.length} nodes, ${options.graph.edges.length} edges)`)
   console.log(mockReason ? `AI: モック応答 (${mockReason})` : `AI: claude CLI (サブスクリプション, model=${options.model})`)
   if (!values['no-open']) openBrowser(url)
 })

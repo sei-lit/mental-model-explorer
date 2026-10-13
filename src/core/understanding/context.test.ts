@@ -23,6 +23,17 @@ describe('buildQuestionContext', () => {
     expect(context.subject.examples[0]?.rationale?.text).toBe('通信を差し替えられるようにする')
   })
 
+  it('gives the stated design intent of both ends of a selected edge', () => {
+    const graph = miniGraph()
+    graph.nodes.find((node) => node.id === 'type.Impl')!.constraints = [{ text: 'Gateway に依存してよい', provenance: 'inferred', source: 'CLAUDE.md' }]
+    const local = new GraphIndex(graph)
+    const exploration = createExplorationReducer(local)(initialExploration(local), repositoryToGatewayEdge as Extract<ExplorationAction, { type: 'select' }>)
+    const context = buildQuestionContext({ index: local, exploration, target: targetFromSelection(exploration.selection), question: '?' })
+
+    if (context.subject.kind !== 'edge') throw new Error('expected edge subject')
+    expect(context.subject.drawn.source.constraints).toEqual([{ text: 'Gateway に依存してよい', provenance: 'inferred', source: 'CLAUDE.md' }])
+  })
+
   it('carries the abstraction level and perspective the user is looking from', () => {
     const context = ask(explore({ type: 'enterScope', scopeId: 'pkg.Data' }, { type: 'setPerspective', perspective: 'responsibility' }))
 

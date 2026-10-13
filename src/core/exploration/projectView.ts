@@ -139,10 +139,10 @@ export function layerOf(index: GraphIndex, nodeId: string): Layer | null {
 }
 
 /** Clean-architecture direction: presentation → domain ← data. Anything else is flagged for discussion. */
-const allowedLayerDependencies: Record<Layer, ReadonlySet<Layer>> = {
-  presentation: new Set(['presentation', 'domain']),
-  domain: new Set(['domain']),
-  data: new Set(['data', 'domain']),
+const defaultLayerRules: Record<Layer, Layer[]> = {
+  presentation: ['presentation', 'domain'],
+  domain: ['domain'],
+  data: ['data', 'domain'],
 }
 
 export function crossesLayerWrongly(index: GraphIndex, edge: GraphEdge): boolean {
@@ -150,5 +150,5 @@ export function crossesLayerWrongly(index: GraphIndex, edge: GraphEdge): boolean
   const from = layerOf(index, edge.source)
   const to = layerOf(index, edge.target)
   if (!from || !to) return false
-  return !allowedLayerDependencies[from].has(to)
+  return !(index.graph.layerRules ?? defaultLayerRules)[from].includes(to)
 }

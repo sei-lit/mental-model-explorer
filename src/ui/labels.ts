@@ -22,11 +22,14 @@ const kindLabel = {
   project: 'プロジェクト',
   package: 'パッケージ',
   module: 'モジュール',
+  namespace: '名前空間',
   property: 'プロパティ',
   method: 'メソッド',
 } as const
 
-const flavorLabel = { class: 'class', struct: 'struct', protocol: 'protocol', enum: 'enum' } as const
+const flavorLabel = { class: 'class', struct: 'struct', protocol: 'protocol', interface: 'interface', object: 'object', enum: 'enum' } as const
+
+const flavorIcon = { class: 'C', struct: 'S', protocol: 'P', interface: 'I', object: 'O', enum: 'E' } as const
 
 export function kindText(node: GraphNode): string {
   if (node.kind === 'type') return node.flavor ? flavorLabel[node.flavor] : '型'
@@ -41,12 +44,14 @@ export function kindIcon(node: GraphNode): string {
       return '▣'
     case 'module':
       return '▤'
+    case 'namespace':
+      return '▢'
     case 'method':
       return 'ƒ'
     case 'property':
       return '·'
     case 'type':
-      return node.flavor === 'protocol' ? 'P' : node.flavor === 'struct' ? 'S' : node.flavor === 'enum' ? 'E' : 'C'
+      return node.flavor ? flavorIcon[node.flavor] : 'C'
   }
 }
 
