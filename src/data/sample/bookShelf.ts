@@ -1,4 +1,4 @@
-import type { Claim, Flow, FlowStep, GraphEdge, GraphNode, Layer, NodeKind, ProjectGraph, RelationKind, TypeFlavor } from '../../core/model/graph'
+import type { Claim, Flow, FlowStep, GraphEdge, GraphNode, NodeKind, ProjectGraph, RelationKind, TypeFlavor } from '../../core/model/graph'
 import type { ProjectSource } from '../projectSource'
 
 const inferred = (text: string, source = 'AI推定'): Claim => ({ text, provenance: 'inferred', source })
@@ -11,7 +11,7 @@ const DATA = 'Packages/Data/Sources'
 interface NodeOptions {
   aliases?: string[]
   flavor?: TypeFlavor
-  layer?: Layer
+  layer?: 'presentation' | 'domain' | 'data'
   responsibility?: Claim
   role?: Claim
   constraints?: Claim[]

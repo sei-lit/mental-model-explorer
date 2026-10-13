@@ -21,6 +21,16 @@ describe('projectView', () => {
     expect(featureToDomain).toMatchObject({ edgeIds: ['e.vm-uc'], aggregated: true })
   })
 
+  it('marks a drawn edge as inferred only when all of its edges are inferred', () => {
+    const graph = miniGraph()
+    graph.edges = graph.edges.map((edge) => (edge.relation === 'calls' ? { ...edge, evidence: { ...edge.evidence, provenance: 'inferred' as const } } : edge))
+    const flowView = graphView(projectView(new GraphIndex(graph), at('project', { perspective: 'flow' })))
+    const structureView = graphView(projectView(new GraphIndex(graph), at('project')))
+
+    expect(flowView.edges.every((edge) => edge.inferred)).toBe(true)
+    expect(structureView.edges.every((edge) => !edge.inferred)).toBe(true)
+  })
+
   it('drops edges whose endpoints fall into the same member', () => {
     const view = graphView(projectView(index, at('project')))
 
@@ -37,10 +47,27 @@ describe('projectView', () => {
 
   it('uses the layer rules that come with the graph', () => {
     const graph = miniGraph()
-    graph.layerRules = { presentation: ['presentation', 'domain', 'data'], domain: ['domain'], data: ['data', 'domain'] }
+    graph.layers = [
+      { id: 'presentation', label: 'P', system: 's', mayDependOn: ['presentation', 'domain', 'data'] },
+      { id: 'domain', label: 'D', system: 's', mayDependOn: ['domain'] },
+      { id: 'data', label: 'Data', system: 's', mayDependOn: ['data', 'domain'] },
+    ]
     const view = graphView(projectView(new GraphIndex(graph), at('project')))
 
     expect(view.edges.find((edge) => edge.id === 'pkg.Feature|depends_on|pkg.Data')?.concerns).toEqual([])
+  })
+
+  it('does not judge dependencies between layers of different systems', () => {
+    const graph = miniGraph()
+    graph.layers = [
+      { id: 'presentation', label: 'P', system: 'swift', mayDependOn: ['presentation'] },
+      { id: 'domain', label: 'D', system: 'kotlin', mayDependOn: ['domain'] },
+      { id: 'data', label: 'Data', system: 'kotlin', mayDependOn: ['data'] },
+    ]
+    const view = graphView(projectView(new GraphIndex(graph), at('project')))
+
+    expect(view.edges.find((edge) => edge.id === 'pkg.Feature|depends_on|pkg.Domain')?.concerns).toEqual([])
+    expect(view.edges.find((edge) => edge.id === 'pkg.Data|implements|pkg.Domain')?.concerns).toEqual(['layerViolation'])
   })
 
   it('represents outside nodes at the level where their path leaves the scope', () => {

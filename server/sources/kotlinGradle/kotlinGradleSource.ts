@@ -1,27 +1,29 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
-import type { Claim, GraphEdge, GraphNode, Layer, ProjectGraph } from '../../../src/core/model/graph'
+import { deriveFlows, resolveCalls, type CallSite, type EntryKind, type FunctionFacts, type TypeFacts } from '../common/callGraph'
+import type { Claim, GraphEdge, GraphNode, LayerDefinition, ProjectGraph } from '../../../src/core/model/graph'
 import type { ProjectSource } from '../../../src/data/projectSource'
 import { parseModuleDependencies } from './buildScript'
-import { capLines, parseKotlinFile, type KotlinDeclaration, type KotlinFile, type KotlinFunction } from './kotlinParser'
+import type { KotlinCall, KotlinTypedName } from './kotlinCalls'
+import { capLines, parseKotlinFile, type KotlinDeclaration, type KotlinFile, type KotlinFunction, type KotlinMember } from './kotlinParser'
 import { parseSettings } from './settings'
 
 const SOURCE_SETS = ['commonMain', 'androidMain', 'iosMain', 'jvmMain', 'main']
 
-const GROUP_LAYERS: Record<string, Layer> = {
-  feature: 'presentation',
-  ui: 'presentation',
-  access: 'presentation',
-  domain: 'domain',
-  data: 'data',
+const GROUP_LAYERS: Record<string, string> = {
+  feature: 'kmp.presentation',
+  ui: 'kmp.presentation',
+  access: 'kmp.presentation',
+  domain: 'kmp.domain',
+  data: 'kmp.data',
 }
 
 // domain:usecaseimpl is allowed to depend on data:repository by the project's CLAUDE.md, so domain may see data.
-const LAYER_RULES: Record<Layer, Layer[]> = {
-  presentation: ['presentation', 'domain'],
-  domain: ['domain', 'data'],
-  data: ['data', 'domain'],
-}
+const LAYERS: LayerDefinition[] = [
+  { id: 'kmp.presentation', label: 'Presentation', system: 'kmp', mayDependOn: ['kmp.presentation', 'kmp.domain'] },
+  { id: 'kmp.domain', label: 'Domain', system: 'kmp', mayDependOn: ['kmp.domain', 'kmp.data'] },
+  { id: 'kmp.data', label: 'Data', system: 'kmp', mayDependOn: ['kmp.data', 'kmp.domain'] },
+]
 
 interface ModuleInfo {
   path: string
@@ -108,7 +110,14 @@ export class KotlinGradleProjectSource implements ProjectSource {
     }
 
     edges.push(...typeEdges(types), ...functionEdges(symbols))
-    return { rootId: 'project', layerRules: LAYER_RULES, nodes, edges, flows: [] }
+    const { typeFacts, functionFacts, entries } = callFacts(symbols)
+    const callEdges = resolveCalls(typeFacts, functionFacts)
+    edges.push(...callEdges)
+    const flows = deriveFlows(callEdges, {
+      entryKind: (nodeId) => entryKind(entries.get(nodeId)),
+      nameOf: (nodeId) => entries.get(nodeId)?.displayName ?? nodeId,
+    })
+    return { rootId: 'project', layers: LAYERS, nodes, edges, flows }
   }
 
   private readSymbols(modules: readonly ModuleInfo[]): Symbols {
@@ -172,15 +181,11 @@ export class KotlinGradleProjectSource implements ProjectSource {
           ? { code: { language: 'kotlin' as const, path: filePath, startLine: declaration.startLine, text: capLines(declaration.text) } }
           : {}),
       })
-      const seen = new Map<string, number>()
-      for (const member of declaration.members) {
-        const base = `${member.kind === 'method' ? 'method' : 'prop'}:${entry.fqn}.${member.name}`
-        const count = (seen.get(base) ?? 0) + 1
-        seen.set(base, count)
+      for (const { id, member, name } of memberNodes(entry)) {
         nodes.push({
-          id: count === 1 ? base : `${base}#${count}`,
+          id,
           kind: member.kind,
-          name: member.name,
+          name,
           parentId: typeId,
           summary: member.signature,
           code: { language: 'kotlin', path: filePath, startLine: member.startLine, text: member.text },
@@ -250,6 +255,17 @@ export class KotlinGradleProjectSource implements ProjectSource {
     }
     return claims
   }
+}
+
+function memberNodes(entry: TypeEntry): { id: string; name: string; member: KotlinMember }[] {
+  const seen = new Map<string, number>()
+  return entry.declaration.members.map((member) => {
+    const name = member.companion ? `Companion.${member.name}` : member.name
+    const base = `${member.kind === 'method' ? 'method' : 'prop'}:${entry.fqn}.${name}`
+    const count = (seen.get(base) ?? 0) + 1
+    seen.set(base, count)
+    return { id: count === 1 ? base : `${base}#${count}`, name, member }
+  })
 }
 
 function kotlinFiles(dir: string): string[] {
@@ -352,4 +368,108 @@ function nameResolver(file: KotlinFile, types: Map<string, TypeEntry>): (name: s
     const candidates = [...new Set(wildcardPackages.map((packageName) => `${packageName}.${name}`).filter((fqn) => types.has(fqn)))]
     return candidates.length === 1 ? (candidates[0] as string) : null
   }
+}
+
+interface EntryInfo {
+  displayName: string
+  methodName: string
+  group: string
+  /** Name of the owning type; null for top-level functions. */
+  typeName: string | null
+}
+
+const PRESENTATION_LAYER = 'kmp.presentation'
+const SCREEN_NAME = /(Screen|Route)$/
+const EVENT_HANDLER_NAME = /^(on[A-Z]|handle|load|refresh|retry|reload|send|dispatch|process|submit)/
+const ACCESS_ENTRY_NAMES = new Set(['invoke', 'viewModel'])
+
+function entryKind(info: EntryInfo | undefined): EntryKind | null {
+  if (!info || GROUP_LAYERS[info.group] !== PRESENTATION_LAYER) return null
+  if (SCREEN_NAME.test(info.methodName) || EVENT_HANDLER_NAME.test(info.methodName)) return 'lifecycle'
+  if (info.group === 'access' && info.typeName !== null && ACCESS_ENTRY_NAMES.has(info.methodName)) return 'lifecycle'
+  return 'other'
+}
+
+function callFacts(symbols: Symbols): { typeFacts: TypeFacts[]; functionFacts: FunctionFacts[]; entries: Map<string, EntryInfo> } {
+  const typeFacts: TypeFacts[] = []
+  const functionFacts: FunctionFacts[] = []
+  const entries = new Map<string, EntryInfo>()
+  const typeResolvers = new Map<string, (name: string) => string | null>()
+  const resolverFor = (file: KotlinFile, key: string) => {
+    let resolver = typeResolvers.get(key)
+    if (!resolver) {
+      const resolve = nameResolver(file, symbols.types)
+      resolver = (name) => {
+        const fqn = resolve(name)
+        return fqn === null ? null : `type:${fqn}`
+      }
+      typeResolvers.set(key, resolver)
+    }
+    return resolver
+  }
+
+  for (const entry of [...symbols.types.values()].sort((a, b) => a.fqn.localeCompare(b.fqn))) {
+    const { declaration } = entry
+    const typeId = `type:${entry.fqn}`
+    const resolveType = resolverFor(entry.file, entry.filePath)
+    const resolveFqn = nameResolver(entry.file, symbols.types)
+    const propertyTypes = new Map<string, string>()
+    for (const parameter of declaration.constructorParameters) propertyTypes.set(parameter.name, parameter.type)
+    for (const member of declaration.members) if (member.kind === 'property' && member.type) propertyTypes.set(member.name, member.type)
+
+    const methods = new Map<string, string[]>()
+    for (const { id, member, name } of memberNodes(entry)) {
+      if (member.kind !== 'method') continue
+      methods.set(member.name, [...(methods.get(member.name) ?? []), id])
+      entries.set(id, { displayName: `${declaration.name}.${name}`, methodName: member.name, group: entry.module.group, typeName: declaration.name })
+      functionFacts.push({
+        nodeId: id,
+        ownerTypeId: typeId,
+        path: entry.filePath,
+        localTypes: typedNameMap(member.typedNames),
+        calls: member.calls.map((call) => callSite(call)),
+        resolveType,
+      })
+    }
+    const supertypeIds = declaration.supertypes.flatMap((supertype) => {
+      const target = supertype.includes('.') ? (symbols.types.has(supertype) ? supertype : null) : resolveFqn(supertype)
+      return target === null ? [] : [`type:${target}`]
+    })
+    typeFacts.push({ id: typeId, isAbstract: declaration.isAbstract, propertyTypes, methods, supertypeIds, resolveType })
+  }
+
+  for (const entry of symbols.functions) {
+    entries.set(entry.id, { displayName: entry.declaration.name, methodName: entry.declaration.name, group: entry.module.group, typeName: null })
+    functionFacts.push({
+      nodeId: entry.id,
+      ownerTypeId: null,
+      path: entry.filePath,
+      localTypes: typedNameMap(entry.declaration.typedNames),
+      calls: entry.declaration.calls.map((call) => callSite(call)),
+      resolveType: resolverFor(entry.file, entry.filePath),
+    })
+  }
+  return { typeFacts: typeFacts, functionFacts: withInvokeCalls(functionFacts, typeFacts), entries }
+}
+
+const typedNameMap = (names: readonly KotlinTypedName[]): Map<string, string> => new Map(names.map((typed) => [typed.name, typed.type]))
+
+const callSite = (call: KotlinCall): CallSite => ({ receiver: call.receiver, method: call.method, line: call.line, text: call.text })
+
+/**
+ * `useCase(params)` calls `invoke` when `useCase` is a parameter, local or property and not a function
+ * of the owner. Without the type information that decides it, the call stays a bare call.
+ */
+function withInvokeCalls(functions: readonly FunctionFacts[], types: readonly TypeFacts[]): FunctionFacts[] {
+  const typesById = new Map(types.map((type) => [type.id, type]))
+  return functions.map((fn) => {
+    const owner = fn.ownerTypeId ? typesById.get(fn.ownerTypeId) : undefined
+    const calls = fn.calls.map((call): CallSite => {
+      if (call.receiver !== null) return call
+      const typed = fn.localTypes.has(call.method) || (owner?.propertyTypes.has(call.method) ?? false)
+      if (!typed || owner?.methods.has(call.method)) return call
+      return { ...call, receiver: call.method, method: 'invoke' }
+    })
+    return { ...fn, calls }
+  })
 }

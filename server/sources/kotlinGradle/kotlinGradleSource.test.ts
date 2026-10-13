@@ -63,6 +63,7 @@ describe('loading a Gradle Kotlin Multiplatform project', () => {
       ['data:repositoryimpl', 'group:data'],
       ['domain:model', 'group:domain'],
       ['domain:usecase', 'group:domain'],
+      ['feature', 'group:feature'],
     ])
     expect(graph.nodes.some((node) => node.id.includes('Gen'))).toBe(false)
     expect(nodeNamed(graph, 'project').name).toBe('mini-app')
@@ -70,10 +71,10 @@ describe('loading a Gradle Kotlin Multiplatform project', () => {
 
   it('assigns layers to groups and carries the project layer rules', async () => {
     const { graph } = await loadMini()
-    expect(nodeNamed(graph, 'group:domain').layer).toBe('domain')
-    expect(nodeNamed(graph, 'group:data').layer).toBe('data')
+    expect(nodeNamed(graph, 'group:domain').layer).toBe('kmp.domain')
+    expect(nodeNamed(graph, 'group:data').layer).toBe('kmp.data')
     expect(nodeNamed(graph, 'group:core').layer).toBeUndefined()
-    expect(graph.layerRules?.domain).toContain('data')
+    expect(graph.layers?.find((layer) => layer.id === 'kmp.domain')?.mayDependOn).toContain('kmp.data')
   })
 
   it('turns build script dependencies into module edges that point at the script line', async () => {
@@ -83,6 +84,7 @@ describe('loading a Gradle Kotlin Multiplatform project', () => {
       'dep:data:repositoryimpl->domain:usecase',
       'dep:domain:usecase->core',
       'dep:domain:usecase->domain:model',
+      'dep:feature->domain:usecase',
     ])
     const edge = graph.edges.find((candidate) => candidate.id === 'dep:domain:usecase->domain:model')
     expect(edge?.evidence).toEqual({ text: 'api(projects.domain.model)', provenance: 'observed', source: 'domain/usecase/build.gradle.kts:8' })
@@ -198,7 +200,7 @@ describe('loading a Gradle Kotlin Multiplatform project', () => {
     expect(refs).toContain('ref:com.example.domain.usecase.account.ExplicitUser->com.example.core.a.Item')
     expect(refs).toContain('ref:com.example.data.GetBookUseCaseImpl->com.example.domain.model.Book')
     expect(refs.filter((id) => id.includes('AmbiguousUser'))).toEqual([])
-    expect(refs.some((id) => id.includes('->com.example.domain.usecase.book.GetBookUseCase'))).toBe(false)
+    expect(refs.some((id) => id.startsWith('ref:com.example.data.') && id.includes('->com.example.domain.usecase.book.GetBookUseCase'))).toBe(false)
   })
 
   it('records the reference line as evidence', async () => {
@@ -222,6 +224,78 @@ describe('loading a Gradle Kotlin Multiplatform project', () => {
       { text: '依存してよい: domain:usecase / core', provenance: 'inferred', source: 'CLAUDE.md 依存の向き' },
     ])
     expect(nodeNamed(graph, 'module:domain:model').constraints).toBeUndefined()
+  })
+
+  it('reads companion object members as members of the type, leaving nested classes out', async () => {
+    const { graph } = await loadMini()
+    const members = graph.nodes.filter((node) => node.parentId === 'type:com.example.feature.book.BookViewModel').map((node) => [node.id, node.name])
+    expect(members).toEqual([
+      ['prop:com.example.feature.book.BookViewModel.history', 'history'],
+      ['method:com.example.feature.book.BookViewModel.onOpen', 'onOpen'],
+      ['method:com.example.feature.book.BookViewModel.onSearch', 'onSearch'],
+      ['method:com.example.feature.book.BookViewModel.render', 'render'],
+      ['prop:com.example.feature.book.BookViewModel.Companion.TAG', 'Companion.TAG'],
+      ['method:com.example.feature.book.BookViewModel.Companion.create', 'Companion.create'],
+    ])
+  })
+
+  it('links a call on a property typed by the constructor, with the call line as evidence', async () => {
+    const { graph } = await loadMini()
+    const edge = graph.edges.find((candidate) => candidate.id === 'call:method:com.example.feature.book.BookViewModel.onOpen->method:com.example.domain.usecase.book.GetBookUseCase.execute')
+    expect(edge?.relation).toBe('calls')
+    expect(edge?.evidence).toEqual({
+      text: 'getBook.execute(',
+      provenance: 'inferred',
+      source: 'feature/src/commonMain/kotlin/com/example/feature/book/BookViewModel.kt:13',
+    })
+  })
+
+  it('links a call on the owner itself', async () => {
+    const { graph } = await loadMini()
+    expect(edgesOf(graph, 'calls')).toContain(
+      'call:method:com.example.feature.book.BookViewModel.onOpen->method:com.example.feature.book.BookViewModel.render',
+    )
+  })
+
+  it('resolves calling a use case like a function to its invoke operator', async () => {
+    const { graph } = await loadMini()
+    expect(edgesOf(graph, 'calls')).toContain(
+      'call:method:com.example.feature.book.BookViewModel.onSearch->method:com.example.domain.usecase.book.ListBooksUseCase.invoke',
+    )
+  })
+
+  it('dispatches a call on an interface to its implementation', async () => {
+    const { graph } = await loadMini()
+    expect(edgesOf(graph, 'calls')).toContain(
+      'dispatch:method:com.example.domain.usecase.book.GetBookUseCase.execute->method:com.example.data.GetBookUseCaseImpl.execute',
+    )
+  })
+
+  it('makes no edge for a call on a receiver of unknown type', async () => {
+    const { graph } = await loadMini()
+    const fromSearch = graph.edges.filter((edge) => edge.relation === 'calls' && edge.source === 'method:com.example.feature.book.BookViewModel.onSearch')
+    expect(fromSearch.map((edge) => edge.target)).toEqual(['method:com.example.domain.usecase.book.ListBooksUseCase.invoke'])
+    expect(edgesOf(graph, 'calls').some((id) => id.includes('Screen->') && id.includes('refresh'))).toBe(false)
+  })
+
+  it('lists a flow from a screen composable with its steps in call order', async () => {
+    const { graph } = await loadMini()
+    const flow = graph.flows.find((candidate) => candidate.name === 'BookScreen')
+    expect(flow?.steps.map((step) => step.note)).toEqual([
+      'BookScreen → BookViewModel.onOpen',
+      'BookViewModel.onOpen → GetBookUseCase.execute',
+      'GetBookUseCase.execute → GetBookUseCaseImpl.execute',
+      'GetBookUseCaseImpl.execute → Logger.log',
+      'Logger.log → NoopLogger.log',
+      'BookViewModel.onOpen → BookViewModel.render',
+      'BookScreen → BookViewModel.onSearch',
+      'BookViewModel.onSearch → ListBooksUseCase.invoke',
+    ])
+  })
+
+  it('starts flows only from presentation modules', async () => {
+    const { graph } = await loadMini()
+    expect(graph.flows.every((flow) => flow.id.includes('com.example.feature.'))).toBe(true)
   })
 
   it('produces a graph that passes the integrity checks', async () => {

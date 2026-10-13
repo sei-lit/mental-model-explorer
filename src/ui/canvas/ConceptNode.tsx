@@ -15,6 +15,7 @@ export interface ConceptNodeData extends Record<string, unknown> {
   selected: boolean
   outlined: boolean
   enterable: boolean
+  layerColor: string | null
   onEnter: (nodeId: string) => void
 }
 
@@ -29,7 +30,6 @@ export function ConceptNode({ data }: NodeProps<ConceptFlowNode>) {
   const classes = [
     'concept-node',
     `role-${viewNode.role}`,
-    viewNode.layer ? `layer-${viewNode.layer}` : '',
     emphasis ? `emphasis-${emphasis}` : '',
     dimmed ? 'dimmed' : '',
     selected ? 'selected' : '',
@@ -42,7 +42,7 @@ export function ConceptNode({ data }: NodeProps<ConceptFlowNode>) {
     <div className={classes.filter(Boolean).join(' ')} style={{ width: NODE_WIDTH, minHeight: NODE_HEIGHT }}>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <Handle type="source" position={Position.Right} isConnectable={false} />
-      <div className="layer-stripe" />
+      <div className="layer-stripe" style={data.layerColor ? { background: data.layerColor } : undefined} />
       <div className="node-body">
         <div className="node-title">
           <span className="kind-icon" title={kindText(node)}>

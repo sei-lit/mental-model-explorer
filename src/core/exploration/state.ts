@@ -70,6 +70,23 @@ export function viewpointOf(state: ExplorationState): Viewpoint {
   return { scopeId: state.scopeId, perspective: state.perspective, flowId: state.flowId, selection: state.selection }
 }
 
+/** Flows with a step inside the scope, in graph order. */
+export function flowsThrough(index: GraphIndex, scopeId: string): string[] {
+  return index.graph.flows
+    .filter((flow) => flow.steps.some((step) => {
+      const edge = index.edge(step.edgeId)
+      return index.isWithin(edge.source, scopeId) || index.isWithin(edge.target, scopeId)
+    }))
+    .map((flow) => flow.id)
+}
+
+/** Keeps the chosen flow when it passes through the scope; otherwise picks one that does, so the flow view is never about somewhere else. */
+function flowFor(index: GraphIndex, scopeId: string, current: string | null): string | null {
+  const relevant = flowsThrough(index, scopeId)
+  if (current !== null && relevant.includes(current)) return current
+  return relevant[0] ?? current
+}
+
 /** A node can become the scope when it has children to lay out, or when it carries code to read. */
 export function canEnter(index: GraphIndex, nodeId: string): boolean {
   const node = index.node(nodeId)
@@ -85,7 +102,8 @@ export function createExplorationReducer(index: GraphIndex) {
         // Going back up selects the child the user came from, so they can see where they were.
         const cameFrom = index.childOfScopeContaining(action.scopeId, state.scopeId)
         const selection: Selection = { kind: 'node', nodeId: cameFrom?.id ?? action.scopeId }
-        return navigate(state, { ...viewpointOf(state), scopeId: action.scopeId, selection }, { action: 'enter', scopeId: action.scopeId })
+        const flowId = state.perspective === 'flow' ? flowFor(index, action.scopeId, state.flowId) : state.flowId
+        return navigate(state, { ...viewpointOf(state), scopeId: action.scopeId, selection, flowId }, { action: 'enter', scopeId: action.scopeId })
       }
       case 'select': {
         if (sameSelection(state.selection, action.selection)) return state
@@ -98,10 +116,11 @@ export function createExplorationReducer(index: GraphIndex) {
       case 'setPerspective': {
         if (action.perspective === state.perspective) return state
         // Selection and scope are kept on purpose: switching perspective re-describes the same target.
-        return navigate(state, { ...viewpointOf(state), perspective: action.perspective }, {
+        const flowId = action.perspective === 'flow' ? flowFor(index, state.scopeId, state.flowId) : state.flowId
+        return navigate(state, { ...viewpointOf(state), perspective: action.perspective, flowId }, {
           action: 'perspective',
           perspective: action.perspective,
-          flowId: state.flowId,
+          flowId,
         })
       }
       case 'setFlow': {

@@ -9,7 +9,7 @@ import { defaultSettings, prepareApi } from './setup'
 
 const usage = `Usage: mental-model-explorer [options]
 
-  --project <path>  開く Gradle Kotlin プロジェクトのルート (default: 同梱のサンプル)
+  --project <path>  開くリポジトリのルート。Gradle KMP と Swift Package を検出する (default: 同梱のサンプル)
   --port <n>        待ち受けるポート (default: 5178)
   --model <name>    claude CLI に渡すモデル (default: ${defaultSettings.model})
   --claude <path>   claude コマンドのパス (default: claude)

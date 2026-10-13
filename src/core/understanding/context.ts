@@ -1,6 +1,6 @@
 import type { Claim, GraphEdge, GraphNode, NodeKind } from '../model/graph'
 import type { GraphIndex } from '../model/graphIndex'
-import { layerOf, projectView, type VisibleView } from '../exploration/projectView'
+import { projectView, type VisibleView } from '../exploration/projectView'
 import type { ExplorationState, Perspective, TrailStep, Viewpoint } from '../exploration/state'
 import { describeTarget, type QuestionTarget } from './target'
 import { simulateRemoval } from './whatIf'
@@ -262,7 +262,7 @@ function viewSubject(index: GraphIndex, view: VisibleView): Subject {
   const degree = new Map<string, number>()
   for (const node of view.nodes) {
     countsByKind[node.node.kind] = (countsByKind[node.node.kind] ?? 0) + 1
-    if (node.layer) countsByLayer[node.layer] = (countsByLayer[node.layer] ?? 0) + 1
+    if (node.layer) countsByLayer[node.layer.label] = (countsByLayer[node.layer.label] ?? 0) + 1
   }
   for (const edge of view.edges) {
     for (const end of [edge.source, edge.target]) degree.set(end, (degree.get(end) ?? 0) + edge.edgeIds.length)
@@ -305,7 +305,7 @@ function buildVisible(view: VisibleView, subjectNodeIds: string[], omitted: Ques
 
 function buildNearby(index: GraphIndex, subjectNodeIds: string[], shownIds: Set<string>, omitted: QuestionContext['omitted']): RelationBrief[] {
   const relations: RelationBrief[] = []
-  for (const edge of index.graph.edges) {
+  for (const edge of edgesAround(index, subjectNodeIds)) {
     const fromSubject = subjectNodeIds.some((id) => index.isWithin(edge.source, id))
     const toSubject = subjectNodeIds.some((id) => index.isWithin(edge.target, id))
     if (fromSubject === toSubject) continue
@@ -375,9 +375,20 @@ export function brief(index: GraphIndex, node: GraphNode): NodeBrief {
     name: node.name,
     kind: node.kind,
     path: index.path(node.id).map((n) => n.name).join(' > '),
-    layer: layerOf(index, node.id),
+    layer: index.layerOf(node.id)?.label ?? null,
     summary: node.summary ?? null,
   }
+}
+
+/** Edges touching the nodes or anything inside them, in graph order so the context stays deterministic. */
+function edgesAround(index: GraphIndex, nodeIds: readonly string[]): GraphEdge[] {
+  const found = new Set<GraphEdge>()
+  const visit = (id: string) => {
+    for (const edge of index.edgesTouching(id)) found.add(edge)
+    for (const child of index.children(id)) visit(child.id)
+  }
+  for (const id of nodeIds) visit(id)
+  return index.graph.edges.filter((edge) => found.has(edge))
 }
 
 function endpoint(index: GraphIndex, node: GraphNode): EndpointBrief {
@@ -385,7 +396,7 @@ function endpoint(index: GraphIndex, node: GraphNode): EndpointBrief {
 }
 
 function detail(index: GraphIndex, node: GraphNode, omitted: QuestionContext['omitted']): NodeDetail {
-  const relations = index.graph.edges
+  const relations = edgesAround(index, [node.id])
     .filter((edge) => index.isWithin(edge.source, node.id) !== index.isWithin(edge.target, node.id))
     .slice(0, contextBudget.relationsPerNode)
     .map((edge) => relation(index, edge))

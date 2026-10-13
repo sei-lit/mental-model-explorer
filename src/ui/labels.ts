@@ -1,4 +1,4 @@
-import type { Claim, GraphNode, RelationKind } from '../core/model/graph'
+import type { Claim, GraphNode, LayerDefinition, RelationKind } from '../core/model/graph'
 import type { Perspective } from '../core/exploration/state'
 
 export const relationLabel: Record<RelationKind, string> = {
@@ -16,7 +16,14 @@ export const perspectiveLabel: Record<Perspective, string> = {
   flow: '流れ',
 }
 
-export const layerLabel = { presentation: 'Presentation', domain: 'Domain', data: 'Data' } as const
+// Layer systems differ per project, so colors are assigned by position in the project's layer list.
+const layerPalette = ['#7c5cd6', '#1c9a8a', '#d99a1c', '#d0577b', '#3f7fd9', '#6aa13a', '#a0673b', '#5b6b8c']
+
+export function layerColor(layers: readonly LayerDefinition[], layer: LayerDefinition | null): string | null {
+  if (!layer) return null
+  const position = layers.findIndex((candidate) => candidate.id === layer.id)
+  return layerPalette[position % layerPalette.length] ?? null
+}
 
 const kindLabel = {
   project: 'プロジェクト',
@@ -27,9 +34,9 @@ const kindLabel = {
   method: 'メソッド',
 } as const
 
-const flavorLabel = { class: 'class', struct: 'struct', protocol: 'protocol', interface: 'interface', object: 'object', enum: 'enum' } as const
+const flavorLabel = { class: 'class', struct: 'struct', protocol: 'protocol', interface: 'interface', object: 'object', enum: 'enum', actor: 'actor', extension: 'extension' } as const
 
-const flavorIcon = { class: 'C', struct: 'S', protocol: 'P', interface: 'I', object: 'O', enum: 'E' } as const
+const flavorIcon = { class: 'C', struct: 'S', protocol: 'P', interface: 'I', object: 'O', enum: 'E', actor: 'A', extension: 'X' } as const
 
 export function kindText(node: GraphNode): string {
   if (node.kind === 'type') return node.flavor ? flavorLabel[node.flavor] : '型'

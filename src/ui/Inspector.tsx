@@ -2,8 +2,7 @@ import type { VisibleView } from '../core/exploration/projectView'
 import { canEnter, type ExplorationState, type Selection } from '../core/exploration/state'
 import type { Claim, GraphEdge } from '../core/model/graph'
 import type { GraphIndex } from '../core/model/graphIndex'
-import { kindText, layerLabel, perspectiveLabel, provenanceLabel, relationLabel } from './labels'
-import { layerOf } from '../core/exploration/projectView'
+import { kindText, layerColor, perspectiveLabel, provenanceLabel, relationLabel } from './labels'
 
 interface InspectorProps {
   index: GraphIndex
@@ -58,7 +57,8 @@ function ScopeSummary({ index, exploration, view }: { index: GraphIndex; explora
 
 function NodeDetail({ index, nodeId, onSelect, onEnter }: { index: GraphIndex; nodeId: string; onSelect: (s: Selection) => void; onEnter: (id: string) => void }) {
   const node = index.node(nodeId)
-  const layer = layerOf(index, nodeId)
+  const layer = index.layerOf(nodeId)
+  const color = layerColor(index.layers, layer)
   const members = index.children(nodeId)
   const edges = index.edgesTouching(nodeId)
   const outgoing = edges.filter((edge) => edge.source === nodeId)
@@ -68,7 +68,11 @@ function NodeDetail({ index, nodeId, onSelect, onEnter }: { index: GraphIndex; n
       <h3>{node.name}</h3>
       <div className="meta">
         <span className="badge">{kindText(node)}</span>
-        {layer && <span className={`badge layer-badge layer-${layer}`}>{layerLabel[layer]}</span>}
+        {layer && (
+          <span className="badge layer-badge" style={{ color: color ?? undefined, borderColor: color ?? undefined }}>
+            {layer.label}
+          </span>
+        )}
         {canEnter(index, nodeId) && (
           <button className="link-button" onClick={() => onEnter(nodeId)}>
             開く

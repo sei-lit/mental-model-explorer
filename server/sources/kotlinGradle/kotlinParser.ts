@@ -1,3 +1,5 @@
+import { extractCalls, extractTypedNames, type KotlinCall, type KotlinTypedName } from './kotlinCalls'
+
 export type KotlinFlavor = 'class' | 'interface' | 'object' | 'enum'
 
 export interface KotlinImport {
@@ -15,6 +17,14 @@ export interface KotlinMember {
   endLine: number
   /** At most {@link MAX_SNIPPET_LINES} lines. */
   text: string
+  /** Declared inside a `companion object` of the type. */
+  companion: boolean
+  /** Declared type of a property (`val x: T`, `val x = T(`). */
+  type: string | null
+  /** Call sites in the body; empty for properties. */
+  calls: KotlinCall[]
+  /** Parameters and locals of a method. */
+  typedNames: KotlinTypedName[]
 }
 
 export interface KotlinReference {
@@ -33,6 +43,10 @@ export interface KotlinDeclaration {
   endLine: number
   summary: string | null
   supertypes: string[]
+  /** Interface or abstract class: calls on it may reach any implementation. */
+  isAbstract: boolean
+  /** Parameters of the primary constructor with a declared type. */
+  constructorParameters: KotlinTypedName[]
   /** Capitalized identifiers used inside the declaration, outside comments and strings. */
   references: KotlinReference[]
   members: KotlinMember[]
@@ -50,6 +64,8 @@ export interface KotlinFunction {
   /** At most {@link MAX_SNIPPET_LINES} lines. */
   text: string
   references: KotlinReference[]
+  calls: KotlinCall[]
+  typedNames: KotlinTypedName[]
 }
 
 export interface KotlinFile {
@@ -263,6 +279,7 @@ export function parseKotlinFile(source: string): KotlinFile {
         endLine: endIndex + 1,
         text: capLines(lines.slice(startIndex, endIndex + 1).join('\n')),
         references: collectReferences(maskedLines, startIndex, endIndex, functionMatch[2] ?? '', nestedDeclarationNames(maskedLines, index + 1, endIndex)),
+        ...bodyFacts(lines, maskedLines, index, endIndex),
       })
       index = endIndex
       continue
@@ -287,6 +304,8 @@ export function parseKotlinFile(source: string): KotlinFile {
       endLine: endIndex + 1,
       summary: kdocSummaryAbove(lines, startIndex),
       supertypes: parseSupertypes(masked.slice(afterName, header.end)),
+      isAbstract: flavor === 'interface' || modifiers.includes('abstract'),
+      constructorParameters: parseConstructorParameters(masked.slice(afterName, header.end)),
       references: collectReferences(maskedLines, index, endIndex, name, nestedDeclarationNames(maskedLines, index + 1, endIndex)),
       members,
       text: lines.slice(startIndex, endIndex + 1).join('\n'),
@@ -397,27 +416,40 @@ function collectReferences(
 
 const indentOf = (line: string | undefined): number => (line ?? '').length - (line ?? '').trimStart().length
 
+const COMPANION = /^\s*(?:@[\w.:]+(?:\([^)]*\))?\s+)*(?:(?:public|private|protected|internal)\s+)?companion\s+object\b/
+
 function parseMembers(
   lines: readonly string[],
   maskedLines: readonly string[],
   nesting: readonly number[],
   bodyOpenIndex: number,
   closeIndex: number,
+  depth = 1,
+  companion = false,
 ): KotlinMember[] {
   const members: KotlinMember[] = []
   let nextFree = bodyOpenIndex + 1
   for (let index = bodyOpenIndex + 1; index < closeIndex; index++) {
-    if (index < nextFree || nesting[index] !== 1) continue
+    if (index < nextFree || nesting[index] !== depth) continue
     const masked = maskedLines[index] ?? ''
+    if (!companion && COMPANION.test(masked)) {
+      const body = companionBody(maskedLines, nesting, index, closeIndex)
+      if (body) {
+        members.push(...parseMembers(lines, maskedLines, nesting, body.open, body.close, depth + 1, true))
+        nextFree = body.close + 1
+      }
+      continue
+    }
     const method = METHOD.exec(masked)
     const property = method ? null : PROPERTY.exec(masked)
     const name = method?.[1] ?? property?.[1]
     if (!name) continue
 
     let startIndex = index
-    while (startIndex - 1 >= nextFree && nesting[startIndex - 1] === 1 && isAnnotationLine(maskedLines[startIndex - 1])) startIndex--
+    while (startIndex - 1 >= nextFree && nesting[startIndex - 1] === depth && isAnnotationLine(maskedLines[startIndex - 1])) startIndex--
 
-    const endIndex = statementEnd(maskedLines, nesting, index, 1, closeIndex)
+    const endIndex = statementEnd(maskedLines, nesting, index, depth, closeIndex)
+    const facts = method ? bodyFacts(lines, maskedLines, index, endIndex) : { calls: [], typedNames: [] }
 
     members.push({
       kind: method ? 'method' : 'property',
@@ -426,10 +458,44 @@ function parseMembers(
       startLine: startIndex + 1,
       endLine: endIndex + 1,
       text: capLines(lines.slice(startIndex, endIndex + 1).join('\n')),
+      companion,
+      type: property ? (extractTypedNames(masked).find((typed) => typed.name === name)?.type ?? null) : null,
+      ...facts,
     })
     nextFree = endIndex + 1
   }
   return members
+}
+
+/** The body may open on the line after `companion object`; `close` is the line of its closing brace. */
+function companionBody(maskedLines: readonly string[], nesting: readonly number[], index: number, closeIndex: number): { open: number; close: number } | null {
+  const open = [index, index + 1].find((candidate) => candidate < closeIndex && (maskedLines[candidate] ?? '').includes('{'))
+  if (open === undefined) return null
+  let next = open + 1
+  while (next < closeIndex && nesting[next] !== nesting[index]) next++
+  return { open, close: next - 1 }
+}
+
+function bodyFacts(lines: readonly string[], maskedLines: readonly string[], fromIndex: number, toIndex: number): { calls: KotlinCall[]; typedNames: KotlinTypedName[] } {
+  const masked = maskedLines.slice(fromIndex, toIndex + 1).join('\n')
+  return {
+    calls: extractCalls(masked, lines.slice(fromIndex, toIndex + 1).join('\n'), fromIndex + 1),
+    typedNames: extractTypedNames(masked),
+  }
+}
+
+function parseConstructorParameters(header: string): KotlinTypedName[] {
+  const flat = stripBalanced(header, '<', '>')
+  const open = flat.indexOf('(')
+  const colon = flat.indexOf(':')
+  if (open === -1 || (colon !== -1 && colon < open)) return []
+  let depth = 0
+  let close = open
+  for (; close < flat.length; close++) {
+    if (flat[close] === '(') depth++
+    else if (flat[close] === ')' && --depth === 0) break
+  }
+  return extractTypedNames(flat.slice(open + 1, close))
 }
 
 function kdocSummaryAbove(lines: readonly string[], startIndex: number): string | null {
