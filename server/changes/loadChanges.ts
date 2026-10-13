@@ -1,6 +1,4 @@
 import { execFile } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { ChangeSet, ProjectGraph } from '../../src/core/model/graph'
 import { mapChanges, parseUnifiedDiff, type ChangeDescription, type FileDiff } from './diff'
@@ -47,12 +45,10 @@ export async function loadChanges(root: string, request: ChangeRequest, graph: P
   return mapChanges(graph, files, { ...description, base, warnings })
 }
 
+/** Every declaration of an added file counts as changed, so the files' lines are not needed. */
 async function untrackedFiles(root: string): Promise<FileDiff[]> {
   const paths = (await git(root, 'ls-files', '--others', '--exclude-standard')).split('\n').filter(Boolean)
-  return paths.map((path) => {
-    const lineCount = readFileSync(join(root, path), 'utf8').split('\n').length
-    return { path, status: 'added', lines: Array.from({ length: lineCount }, (_, i) => i + 1) }
-  })
+  return paths.map((path) => ({ path, status: 'added', lines: [] }))
 }
 
 /** `gh pr checkout` does not always fetch the base commit; merge-base needs it locally. */
