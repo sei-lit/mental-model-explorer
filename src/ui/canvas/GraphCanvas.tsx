@@ -115,6 +115,7 @@ function GraphCanvasInner({
         emphasis ? `emphasis-${emphasis}` : '',
         overlay.active && emphasis === null ? 'dimmed' : '',
         viewEdge.concerns.includes('layerViolation') ? 'violation' : '',
+        viewEdge.inferred ? 'inferred' : '',
         selectedEdgeIds?.some((id) => viewEdge.edgeIds.includes(id)) ? 'selected' : '',
         traceSteps.length > 0 ? 'trace' : '',
       ]

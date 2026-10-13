@@ -21,6 +21,16 @@ describe('projectView', () => {
     expect(featureToDomain).toMatchObject({ edgeIds: ['e.vm-uc'], aggregated: true })
   })
 
+  it('marks a drawn edge as inferred only when all of its edges are inferred', () => {
+    const graph = miniGraph()
+    graph.edges = graph.edges.map((edge) => (edge.relation === 'calls' ? { ...edge, evidence: { ...edge.evidence, provenance: 'inferred' as const } } : edge))
+    const flowView = graphView(projectView(new GraphIndex(graph), at('project', { perspective: 'flow' })))
+    const structureView = graphView(projectView(new GraphIndex(graph), at('project')))
+
+    expect(flowView.edges.every((edge) => edge.inferred)).toBe(true)
+    expect(structureView.edges.every((edge) => !edge.inferred)).toBe(true)
+  })
+
   it('drops edges whose endpoints fall into the same member', () => {
     const view = graphView(projectView(index, at('project')))
 

@@ -868,3 +868,8 @@ button.primary {
   background: var(--warn-soft);
   font-size: 12px;
 }
+
+/* Edges known only from static analysis (e.g. resolved calls) are drawn as tentative. */
+.react-flow__edge.inferred .react-flow__edge-path {
+  stroke-dasharray: 2 4;
+}

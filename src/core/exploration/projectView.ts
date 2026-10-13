@@ -25,6 +25,8 @@ export interface ViewEdge {
   /** Real graph edges this drawn edge stands for. More than one means the edge is aggregated. */
   edgeIds: string[]
   aggregated: boolean
+  /** True when every underlying edge is only inferred (e.g. calls found by static analysis), so the UI can draw it as tentative. */
+  inferred: boolean
   /** 1-based step numbers of the selected flow that this edge carries. */
   flowSteps: number[]
   concerns: EdgeConcern[]
@@ -78,11 +80,13 @@ export function projectView(index: GraphIndex, viewpoint: Viewpoint): VisibleVie
       relation: edge.relation,
       edgeIds: [],
       aggregated: false,
+      inferred: true,
       flowSteps: [],
       concerns: [],
     }
     if (!viewEdge.edgeIds.includes(edge.id)) viewEdge.edgeIds.push(edge.id)
     if (step !== null) viewEdge.flowSteps.push(step)
+    if (edge.evidence.provenance === 'observed') viewEdge.inferred = false
     viewEdge.aggregated = viewEdge.edgeIds.length > 1 || viewEdge.source !== edge.source || viewEdge.target !== edge.target
     if (crossesLayerWrongly(index, edge) && !viewEdge.concerns.includes('layerViolation')) viewEdge.concerns.push('layerViolation')
     viewEdges.set(id, viewEdge)
