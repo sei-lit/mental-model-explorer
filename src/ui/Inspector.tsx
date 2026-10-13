@@ -86,7 +86,7 @@ function ChangesInScope({ index, scopeId, onFocusRef }: { index: GraphIndex; sco
         {inScope.slice(0, MAX_LISTED_CHANGES).map((id) => (
           <li key={id}>
             <button className="link-button" onClick={() => onFocusRef(id)} title={index.path(id).map((node) => node.name).join(' > ')}>
-              {index.node(id).name}
+              {qualifiedName(index, id)}
             </button>
           </li>
         ))}
@@ -94,6 +94,13 @@ function ChangesInScope({ index, scopeId, onFocusRef }: { index: GraphIndex; sco
       </ul>
     </div>
   )
+}
+
+/** Members are listed with their type ("ViewModel.init"); a bare "init" or "body" says nothing in a list. */
+function qualifiedName(index: GraphIndex, id: string): string {
+  const node = index.node(id)
+  const parent = node.parentId ? index.node(node.parentId) : null
+  return parent?.kind === 'type' ? `${parent.name}.${node.name}` : node.name
 }
 
 function NodeDetail({ index, nodeId, onSelect, onEnter }: { index: GraphIndex; nodeId: string; onSelect: (s: Selection) => void; onEnter: (id: string) => void }) {
