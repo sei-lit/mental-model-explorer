@@ -358,7 +358,9 @@ function CodeOf({ index, moduleId, refId, result }: { index: GraphIndex; moduleI
     <div className="module-code">
       <h4>{qualifiedName(index, nodeId)}</h4>
       {note && <p className="muted">{note}</p>}
-      {excerpts.length === 0 && <p className="muted">このモジュールの外のコードなので、ここには表示できません。</p>}
+      {excerpts.length === 0 && (
+        <p className="muted">{index.isWithin(nodeId, moduleId) ? 'この要素には行範囲がありません。' : 'このモジュールの外のコードなので、ここには表示できません。'}</p>
+      )}
       {excerpts.map((excerpt) => (
         <div key={`${excerpt.path}:${excerpt.startLine}`}>
           <div className="muted path">

@@ -1235,7 +1235,8 @@ button.primary {
 
 .collaborators {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …): long evidence chips would otherwise widen a column past the page. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
 }
 
