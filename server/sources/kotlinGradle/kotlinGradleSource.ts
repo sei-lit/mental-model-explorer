@@ -99,7 +99,7 @@ export class KotlinGradleProjectSource implements ProjectSource {
         name: module.name,
         parentId: `group:${module.group}`,
         aliases: module.name.includes(':') ? [module.path, module.name.split(':').at(-1) as string] : [module.path],
-        summary: `Gradle モジュール ${module.path}`,
+        summary: moduleClaims?.responsibility?.text ?? `Gradle モジュール ${module.path}`,
         ...(moduleClaims?.responsibility ? { responsibility: moduleClaims.responsibility } : {}),
         ...(moduleClaims?.constraint ? { constraints: [moduleClaims.constraint] } : {}),
       })
