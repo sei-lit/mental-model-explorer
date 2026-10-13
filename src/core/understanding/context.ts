@@ -2,6 +2,7 @@ import type { Claim, GraphEdge, GraphNode, NodeKind } from '../model/graph'
 import type { GraphIndex } from '../model/graphIndex'
 import { projectView, type VisibleView } from '../exploration/projectView'
 import type { ExplorationState, Perspective, TrailStep, Viewpoint } from '../exploration/state'
+import type { ModuleBrief } from './moduleBrief'
 import { describeTarget, type QuestionTarget } from './target'
 import { simulateRemoval } from './whatIf'
 
@@ -107,6 +108,11 @@ export interface QuestionContext {
   previous: { question: string; summary: string } | null
   /** The pull request laid over the graph, with what it changed inside the current scope. */
   changes: ChangesBrief | null
+  /**
+   * The module page's brief and the module's source. Only the server attaches it, because only the
+   * server can read the files; the browser always sends null.
+   */
+  module: ModuleAttachment | null
   /** How much was left out to stay within the budget. Shown to the user next to the context preview. */
   omitted: {
     visibleNodes: number
@@ -130,6 +136,17 @@ export interface ChangesBrief {
   outsideScope: number
   /** Changed files the analysis has no declarations for (deleted files, resources, build scripts). */
   filesWithoutDeclarations: { path: string; status: string }[]
+}
+
+export interface ModuleAttachment {
+  moduleId: string
+  name: string
+  hash: string
+  brief: ModuleBrief
+  /** Ids the dossier shows; an answer may point at them. Not sent to the model, which reads them in `dossier`. */
+  citableIds: string[]
+  /** The rendered dossier (declarations with ids, relations, source with line numbers). */
+  dossier: string
 }
 
 const perspectiveMeaning: Record<Perspective, string> = {
@@ -167,6 +184,7 @@ export function buildQuestionContext({ index, exploration, target, question, pre
     trail,
     previous,
     changes: buildChanges(index, exploration.scopeId, subjectNodeIds, omitted),
+    module: null,
     omitted,
   }
 }
@@ -528,5 +546,6 @@ export function referencedIds(context: QuestionContext): Set<string> {
   context.nearby.forEach(addRelation)
   for (const step of context.lens.flow?.steps ?? []) ids.add(step.edgeId).add(step.from.id).add(step.to.id)
   for (const node of context.changes?.inScope ?? []) ids.add(node.id)
+  for (const id of context.module?.citableIds ?? []) ids.add(id)
   return ids
 }

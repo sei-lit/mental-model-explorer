@@ -20,31 +20,48 @@ export class ClaudeCliError extends Error {}
  */
 export class ClaudeCliResponder implements Responder {
   readonly kind = 'claude-cli' as const
-  // An empty working directory keeps the CLI from picking up CLAUDE.md or project settings from
-  // wherever the explorer was started; the answer must depend only on the context we send.
-  private readonly workdir = mkdtempSync(join(tmpdir(), 'mental-model-explorer-'))
+  // The answer must depend only on the context we send.
+  private readonly workdir = isolatedWorkdir()
 
   constructor(private readonly options: ClaudeCliOptions) {}
 
   async ask(context: QuestionContext): Promise<unknown> {
-    const args = [
-      '-p',
-      '--output-format', 'json',
-      '--json-schema', JSON.stringify(answerJsonSchema),
-      '--system-prompt', systemPrompt,
-      '--model', this.options.model,
-      // The model only reads the context we pass; it must not run tools against the user's machine,
-      // and the user's own hooks, plugins, CLAUDE.md and settings must not change the answer.
-      '--tools', '',
-      '--strict-mcp-config',
-      '--safe-mode',
-      '--restricted',
-      '--permission-prompts', 'none',
-      '--no-session-persistence',
-    ]
-    const stdout = await run(this.options.command, args, renderUserMessage(context), this.workdir, this.options.timeoutMs)
-    return parseCliResult(stdout)
+    return runStructured(this.options, { schema: answerJsonSchema, systemPrompt, input: renderUserMessage(context), cwd: this.workdir, timeoutMs: this.options.timeoutMs })
   }
+}
+
+export interface StructuredRequest {
+  schema: Record<string, unknown>
+  systemPrompt: string
+  input: string
+  cwd: string
+  timeoutMs: number
+}
+
+/** One headless claude CLI call whose result must match a JSON schema. */
+export async function runStructured(options: Pick<ClaudeCliOptions, 'command' | 'model'>, request: StructuredRequest): Promise<unknown> {
+  const args = [
+    '-p',
+    '--output-format', 'json',
+    '--json-schema', JSON.stringify(request.schema),
+    '--system-prompt', request.systemPrompt,
+    '--model', options.model,
+    // The model only reads the input we pass; it must not run tools against the user's machine,
+    // and the user's own hooks, plugins, CLAUDE.md and settings must not change the result.
+    '--tools', '',
+    '--strict-mcp-config',
+    '--safe-mode',
+    '--restricted',
+    '--permission-prompts', 'none',
+    '--no-session-persistence',
+  ]
+  const stdout = await run(options.command, args, request.input, request.cwd, request.timeoutMs)
+  return parseCliResult(stdout)
+}
+
+/** An empty working directory keeps the CLI from picking up CLAUDE.md or project settings from where the explorer was started. */
+export function isolatedWorkdir(): string {
+  return mkdtempSync(join(tmpdir(), 'mental-model-explorer-'))
 }
 
 export function parseCliResult(stdout: string): unknown {

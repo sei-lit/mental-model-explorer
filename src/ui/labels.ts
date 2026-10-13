@@ -1,5 +1,6 @@
 import type { Claim, GraphNode, LayerDefinition, RelationKind } from '../core/model/graph'
 import type { Perspective } from '../core/exploration/state'
+import type { GraphIndex } from '../core/model/graphIndex'
 
 export const relationLabel: Record<RelationKind, string> = {
   depends_on: '依存',
@@ -69,3 +70,10 @@ export function stepMark(step: number): string {
 }
 
 export const provenanceLabel: Record<Claim['provenance'], string> = { observed: '観測', inferred: '推測' }
+
+/** "Type.member" for members, so a member can be told apart from another type's member of the same name. */
+export function qualifiedName(index: GraphIndex, id: string): string {
+  const node = index.node(id)
+  const parent = node.parentId ? index.node(node.parentId) : null
+  return parent?.kind === 'type' ? `${parent.name}.${node.name}` : node.name
+}
