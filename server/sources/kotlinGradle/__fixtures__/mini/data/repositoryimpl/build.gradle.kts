@@ -3,6 +3,12 @@ plugins {
 }
 
 kotlin {
+    iosArm64 {
+        binaries.framework {
+            export(projects.domain.model)
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             implementation(project(":domain:usecase"))

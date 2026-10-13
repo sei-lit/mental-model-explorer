@@ -3,7 +3,7 @@ import { basename, join, relative, sep } from 'node:path'
 import type { Claim, GraphEdge, GraphNode, Layer, ProjectGraph } from '../../../src/core/model/graph'
 import type { ProjectSource } from '../../../src/data/projectSource'
 import { parseModuleDependencies } from './buildScript'
-import { capLines, parseKotlinFile, type KotlinDeclaration, type KotlinFile } from './kotlinParser'
+import { capLines, parseKotlinFile, type KotlinDeclaration, type KotlinFile, type KotlinFunction } from './kotlinParser'
 import { parseSettings } from './settings'
 
 const SOURCE_SETS = ['commonMain', 'androidMain', 'iosMain', 'jvmMain', 'main']
@@ -38,6 +38,20 @@ interface TypeEntry {
   module: ModuleInfo
 }
 
+interface FunctionEntry {
+  id: string
+  packageName: string
+  declaration: KotlinFunction
+  file: KotlinFile
+  filePath: string
+  module: ModuleInfo
+}
+
+interface Symbols {
+  types: Map<string, TypeEntry>
+  functions: FunctionEntry[]
+}
+
 interface ModuleClaims {
   responsibility?: Claim
   constraint?: Claim
@@ -59,7 +73,8 @@ export class KotlinGradleProjectSource implements ProjectSource {
         return { path, name: segments.join(':'), dir: segments.join('/'), group: segments[0] ?? path }
       })
 
-    const types = this.readTypes(modules)
+    const symbols = this.readSymbols(modules)
+    const { types } = symbols
     const claims = this.readClaims()
     const nodes: GraphNode[] = []
     const edges: GraphEdge[] = []
@@ -88,16 +103,19 @@ export class KotlinGradleProjectSource implements ProjectSource {
         ...(moduleClaims?.responsibility ? { responsibility: moduleClaims.responsibility } : {}),
         ...(moduleClaims?.constraint ? { constraints: [moduleClaims.constraint] } : {}),
       })
-      nodes.push(...this.typeNodes(module, moduleId, types))
+      nodes.push(...this.symbolNodes(module, moduleId, symbols))
       edges.push(...this.dependencyEdges(module, modules))
     }
 
-    edges.push(...typeEdges(types))
+    edges.push(...typeEdges(types), ...functionEdges(symbols))
     return { rootId: 'project', layerRules: LAYER_RULES, nodes, edges, flows: [] }
   }
 
-  private readTypes(modules: readonly ModuleInfo[]): Map<string, TypeEntry> {
+  private readSymbols(modules: readonly ModuleInfo[]): Symbols {
     const types = new Map<string, TypeEntry>()
+    const functions: FunctionEntry[] = []
+    const functionKeys = new Map<string, number>()
+    const signatureKeys = new Set<string>()
     for (const module of modules) {
       for (const sourceSet of SOURCE_SETS) {
         for (const absolute of kotlinFiles(join(this.rootDir, module.dir, 'src', sourceSet, 'kotlin'))) {
@@ -108,16 +126,27 @@ export class KotlinGradleProjectSource implements ProjectSource {
             // expect/actual declarations share a name across source sets; the first one (commonMain) wins.
             if (!types.has(fqn)) types.set(fqn, { fqn, declaration, file, filePath, module })
           }
+          for (const declaration of file.functions) {
+            const base = `fn:${file.packageName ? `${file.packageName}.` : ''}${declaration.name}`
+            // Same signature in another source set is the expect/actual counterpart; a different one is an overload.
+            const signature = `${base}|${declaration.signature.replace(/\b(expect|actual)\s+/g, '').replace(/\s*[{=].*$/, '')}`
+            if (signatureKeys.has(signature)) continue
+            signatureKeys.add(signature)
+            const count = (functionKeys.get(base) ?? 0) + 1
+            functionKeys.set(base, count)
+            functions.push({ id: count === 1 ? base : `${base}#${count}`, packageName: file.packageName, declaration, file, filePath, module })
+          }
         }
       }
     }
-    return types
+    return { types, functions }
   }
 
-  private typeNodes(module: ModuleInfo, moduleId: string, types: Map<string, TypeEntry>): GraphNode[] {
-    const own = [...types.values()].filter((entry) => entry.module === module).sort((a, b) => a.fqn.localeCompare(b.fqn))
+  private symbolNodes(module: ModuleInfo, moduleId: string, symbols: Symbols): GraphNode[] {
+    const own = [...symbols.types.values()].filter((entry) => entry.module === module).sort((a, b) => a.fqn.localeCompare(b.fqn))
+    const ownFunctions = symbols.functions.filter((entry) => entry.module === module).sort((a, b) => a.id.localeCompare(b.id))
     const nodes: GraphNode[] = []
-    const packages = [...new Set(own.map((entry) => entry.file.packageName))].sort()
+    const packages = [...new Set([...own.map((entry) => entry.file.packageName), ...ownFunctions.map((entry) => entry.packageName)])].sort()
     const prefix = commonPrefix(packages.map((name) => name.split('.').filter(Boolean)))
     const namespaceIds = new Map<string, string>()
     if (packages.length > 1) {
@@ -157,6 +186,17 @@ export class KotlinGradleProjectSource implements ProjectSource {
           code: { language: 'kotlin', path: filePath, startLine: member.startLine, text: member.text },
         })
       }
+    }
+    for (const entry of ownFunctions) {
+      const { declaration } = entry
+      nodes.push({
+        id: entry.id,
+        kind: 'method',
+        name: declaration.name,
+        parentId: namespaceIds.get(entry.packageName) ?? moduleId,
+        summary: declaration.signature,
+        code: { language: 'kotlin', path: entry.filePath, startLine: declaration.startLine, text: declaration.text },
+      })
     }
     return nodes
   }
@@ -270,6 +310,27 @@ function typeEdges(types: Map<string, TypeEntry>): GraphEdge[] {
         target: `type:${target}`,
         relation: 'depends_on',
         evidence: observed(`${reference.name} を参照`, `${filePath}:${reference.line}`),
+      })
+    }
+  }
+  return edges
+}
+
+function functionEdges(symbols: Symbols): GraphEdge[] {
+  const edges: GraphEdge[] = []
+  for (const entry of [...symbols.functions].sort((a, b) => a.id.localeCompare(b.id))) {
+    const resolve = nameResolver(entry.file, symbols.types)
+    const linked = new Set<string>()
+    for (const reference of entry.declaration.references) {
+      const target = resolve(reference.name)
+      if (!target || linked.has(target)) continue
+      linked.add(target)
+      edges.push({
+        id: `ref:${entry.id}->${target}`,
+        source: entry.id,
+        target: `type:${target}`,
+        relation: 'depends_on',
+        evidence: observed(`${reference.name} を参照`, `${entry.filePath}:${reference.line}`),
       })
     }
   }

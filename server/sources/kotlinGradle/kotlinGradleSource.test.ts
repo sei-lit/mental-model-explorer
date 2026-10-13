@@ -29,12 +29,28 @@ describe('settings.gradle.kts', () => {
 
 describe('module dependencies in build scripts', () => {
   it('matches type-safe accessors to module paths regardless of case and separators', () => {
-    const script = 'api(projects.data.repositoryImpl)\n  implementation(projects.tools.kspProcessor)\n// api(projects.core)'
+    const script = 'dependencies {\napi(projects.data.repositoryImpl)\n  implementation(projects.tools.kspProcessor)\n// api(projects.core)\n}'
     const dependencies = parseModuleDependencies(script, [':data:repository-impl', ':tools:ksp-processor', ':core'])
     expect(dependencies.map((dependency) => [dependency.target, dependency.line, dependency.text])).toEqual([
-      [':data:repository-impl', 1, 'api(projects.data.repositoryImpl)'],
-      [':tools:ksp-processor', 2, 'implementation(projects.tools.kspProcessor)'],
+      [':data:repository-impl', 2, 'api(projects.data.repositoryImpl)'],
+      [':tools:ksp-processor', 3, 'implementation(projects.tools.kspProcessor)'],
     ])
+  })
+})
+
+describe('module dependencies versus framework exports', () => {
+  it('ignores export(...) and anything outside a dependencies block', () => {
+    const script = [
+      'binaries.framework {',
+      '    export(projects.core)',
+      '}',
+      'commonMain.dependencies {',
+      '    api(projects.domain.model)',
+      '}',
+      'api(projects.data.repository)',
+    ].join('\n')
+    const dependencies = parseModuleDependencies(script, [':core', ':domain:model', ':data:repository'])
+    expect(dependencies.map((dependency) => dependency.target)).toEqual([':domain:model'])
   })
 })
 
@@ -70,6 +86,11 @@ describe('loading a Gradle Kotlin Multiplatform project', () => {
     ])
     const edge = graph.edges.find((candidate) => candidate.id === 'dep:domain:usecase->domain:model')
     expect(edge?.evidence).toEqual({ text: 'api(projects.domain.model)', provenance: 'observed', source: 'domain/usecase/build.gradle.kts:8' })
+  })
+
+  it('does not turn a framework export into a module dependency', async () => {
+    const { graph } = await loadMini()
+    expect(graph.edges.some((edge) => edge.id === 'dep:data:repositoryimpl->domain:model')).toBe(false)
   })
 
   it('puts types directly under a single-package module and namespaces under a multi-package module', async () => {
@@ -124,6 +145,42 @@ describe('loading a Gradle Kotlin Multiplatform project', () => {
   it('shows the declaration of a type without members', async () => {
     const { graph } = await loadMini()
     expect(nodeNamed(graph, 'type:com.example.core.b.Item').code?.text).toBe('class Item')
+  })
+
+  it('reads top-level functions as methods under the namespace, numbering overloads and naming extensions by receiver', async () => {
+    const { graph } = await loadMini()
+    const functions = graph.nodes.filter((node) => node.id.startsWith('fn:com.example.domain.usecase.account')).map((node) => [node.id, node.name, node.parentId])
+    expect(functions).toEqual([
+      ['fn:com.example.domain.usecase.account.Item.describe', 'Item.describe', 'ns:domain:usecase:account'],
+      ['fn:com.example.domain.usecase.account.showItem', 'showItem', 'ns:domain:usecase:account'],
+      ['fn:com.example.domain.usecase.account.showItem#2', 'showItem', 'ns:domain:usecase:account'],
+    ])
+    const describe = nodeNamed(graph, 'fn:com.example.domain.usecase.account.Item.describe')
+    expect(describe.kind).toBe('method')
+    expect(describe.code?.text).toBe('fun <T> Item?.describe(extra: T): String {\n    return "}"\n}')
+    expect(describe.summary).toBe('fun <T> Item?.describe(extra: T): String {')
+    expect(nodeNamed(graph, 'fn:com.example.domain.usecase.account.showItem').code?.text).toBe('@Composable\nfun showItem(item: Item): String = "x"')
+  })
+
+  it('keeps one function node for an expect/actual pair', async () => {
+    const { graph } = await loadMini()
+    expect(graph.nodes.filter((node) => node.id.startsWith('fn:com.example.core.a.platformName')).map((node) => node.id)).toEqual([
+      'fn:com.example.core.a.platformName',
+    ])
+  })
+
+  it('links a function to the types it references', async () => {
+    const { graph } = await loadMini()
+    const edge = graph.edges.find((candidate) => candidate.id === 'ref:fn:com.example.domain.usecase.account.showItem->com.example.core.b.Item')
+    expect(edge?.source).toBe('fn:com.example.domain.usecase.account.showItem')
+    expect(edge?.target).toBe('type:com.example.core.b.Item')
+    expect(edge?.evidence.source).toBe('domain/usecase/src/commonMain/kotlin/com/example/domain/usecase/account/Functions.kt:6')
+  })
+
+  it('does not resolve a name declared inside the type to a same-named top-level type', async () => {
+    const { graph } = await loadMini()
+    const refs = graph.edges.filter((edge) => edge.source === 'type:com.example.core.a.Holder').map((edge) => edge.target)
+    expect(refs).toEqual(['type:com.example.core.a.Logger'])
   })
 
   it('links supertypes as implements edges', async () => {

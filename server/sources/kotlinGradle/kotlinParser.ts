@@ -40,10 +40,24 @@ export interface KotlinDeclaration {
   text: string
 }
 
+export interface KotlinFunction {
+  /** `Receiver.name` for extension functions. */
+  name: string
+  /** The declaration line as written, trimmed. */
+  signature: string
+  startLine: number
+  endLine: number
+  /** At most {@link MAX_SNIPPET_LINES} lines. */
+  text: string
+  references: KotlinReference[]
+}
+
 export interface KotlinFile {
   packageName: string
   imports: KotlinImport[]
   declarations: KotlinDeclaration[]
+  /** Top-level functions, including extension functions. */
+  functions: KotlinFunction[]
 }
 
 export const MAX_SNIPPET_LINES = 60
@@ -189,6 +203,9 @@ const DECLARATION = /^\s*(.*?)\b(class|interface|object)\s+(\w+)/
 const ANNOTATION = String.raw`(?:@[\w.:]+(?:\([^)]*\))?\s+)*`
 const MEMBER_MODIFIERS = String.raw`(?:(?:public|private|protected|internal|override|open|abstract|final|suspend|inline|operator|infix|tailrec|external|lateinit|const|expect|actual)\s+)*`
 const METHOD = new RegExp(String.raw`^\s*${ANNOTATION}${MEMBER_MODIFIERS}fun\s+(?:<.*>\s*)?(\w+)\s*\(`)
+const TOP_LEVEL_FUNCTION = new RegExp(
+  String.raw`^\s*${ANNOTATION}${MEMBER_MODIFIERS}fun\s+(?:<.*?>\s*)?((?:[\w.]+(?:<[^()]*>)?\??\.)?)(\w+)\s*\(`,
+)
 const PROPERTY = new RegExp(String.raw`^\s*${ANNOTATION}${MEMBER_MODIFIERS}(?:val|var)\s+(\w+)(?![\w.])`)
 
 export function parseKotlinFile(source: string): KotlinFile {
@@ -226,13 +243,31 @@ export function parseKotlinFile(source: string): KotlinFile {
     if (importMatch?.[1]) imports.push({ path: importMatch[1], alias: importMatch[3] ?? null, wildcard: importMatch[2] !== undefined })
   })
 
+  const functions: KotlinFunction[] = []
+
   for (let index = 0; index < maskedLines.length; index++) {
     if (nesting[index] !== 0) continue
-    const match = DECLARATION.exec(maskedLines[index] ?? '')
-    if (!match) continue
-    const [whole, prefix = '', keyword = '', name = ''] = match
-    const modifiers = prefix.replace(/@[\w.:]+(?:\([^)]*\))?/g, ' ').split(/\s+/).filter(Boolean)
-    if (!modifiers.every((modifier) => DECLARATION_MODIFIERS.has(modifier))) continue
+    const found = matchDeclaration(maskedLines[index] ?? '')
+    if (!found) {
+      const functionMatch = TOP_LEVEL_FUNCTION.exec(maskedLines[index] ?? '')
+      if (!functionMatch) continue
+      const receiver = (functionMatch[1] ?? '').replace(/<[^<>]*>/g, '').replace(/\?/g, '')
+      const name = receiver + (functionMatch[2] ?? '')
+      let startIndex = index
+      while (startIndex > 0 && nesting[startIndex - 1] === 0 && isAnnotationLine(maskedLines[startIndex - 1])) startIndex--
+      const endIndex = statementEnd(maskedLines, nesting, index, 0, maskedLines.length)
+      functions.push({
+        name,
+        signature: (lines[index] ?? '').trim(),
+        startLine: startIndex + 1,
+        endLine: endIndex + 1,
+        text: capLines(lines.slice(startIndex, endIndex + 1).join('\n')),
+        references: collectReferences(maskedLines, startIndex, endIndex, functionMatch[2] ?? '', nestedDeclarationNames(maskedLines, index + 1, endIndex)),
+      })
+      index = endIndex
+      continue
+    }
+    const { whole, modifiers, keyword, name } = found
 
     const flavor: KotlinFlavor = keyword === 'interface' ? 'interface' : keyword === 'object' ? 'object' : modifiers.includes('enum') ? 'enum' : 'class'
     const afterName = (lineStarts[index] ?? 0) + whole.length
@@ -252,14 +287,32 @@ export function parseKotlinFile(source: string): KotlinFile {
       endLine: endIndex + 1,
       summary: kdocSummaryAbove(lines, startIndex),
       supertypes: parseSupertypes(masked.slice(afterName, header.end)),
-      references: collectReferences(maskedLines, index, endIndex, name),
+      references: collectReferences(maskedLines, index, endIndex, name, nestedDeclarationNames(maskedLines, index + 1, endIndex)),
       members,
       text: lines.slice(startIndex, endIndex + 1).join('\n'),
     })
     index = endIndex
   }
 
-  return { packageName, imports, declarations }
+  return { packageName, imports, declarations, functions }
+}
+
+function matchDeclaration(line: string): { whole: string; modifiers: string[]; keyword: string; name: string } | null {
+  const match = DECLARATION.exec(line)
+  if (!match) return null
+  const [whole, prefix = '', keyword = '', name = ''] = match
+  const modifiers = prefix.replace(/@[\w.:]+(?:\([^)]*\))?/g, ' ').split(/\s+/).filter(Boolean)
+  return modifiers.every((modifier) => DECLARATION_MODIFIERS.has(modifier)) ? { whole, modifiers, keyword, name } : null
+}
+
+/** Classes, interfaces and objects declared inside a declaration shadow same-named top-level types there. */
+function nestedDeclarationNames(maskedLines: readonly string[], fromIndex: number, toIndex: number): Set<string> {
+  const names = new Set<string>()
+  for (let index = fromIndex; index <= toIndex; index++) {
+    const found = matchDeclaration(maskedLines[index] ?? '')
+    if (found) names.add(found.name)
+  }
+  return names
 }
 
 function nestingAtLineStarts(maskedLines: readonly string[]): number[] {
@@ -326,11 +379,17 @@ function parseSupertypes(header: string): string[] {
   return names
 }
 
-function collectReferences(maskedLines: readonly string[], fromIndex: number, toIndex: number, ownName: string): KotlinReference[] {
+function collectReferences(
+  maskedLines: readonly string[],
+  fromIndex: number,
+  toIndex: number,
+  ownName: string,
+  shadowed: ReadonlySet<string>,
+): KotlinReference[] {
   const firstLine = new Map<string, number>()
   for (let index = fromIndex; index <= toIndex; index++) {
     for (const match of (maskedLines[index] ?? '').matchAll(/(?<![\w.])[A-Z][A-Za-z0-9_]*/g)) {
-      if (match[0] !== ownName && !firstLine.has(match[0])) firstLine.set(match[0], index + 1)
+      if (match[0] !== ownName && !shadowed.has(match[0]) && !firstLine.has(match[0])) firstLine.set(match[0], index + 1)
     }
   }
   return [...firstLine].map(([name, line]) => ({ name, line }))
@@ -358,15 +417,7 @@ function parseMembers(
     let startIndex = index
     while (startIndex - 1 >= nextFree && nesting[startIndex - 1] === 1 && isAnnotationLine(maskedLines[startIndex - 1])) startIndex--
 
-    let endIndex = index
-    for (;;) {
-      while (endIndex < closeIndex && nesting[endIndex + 1] !== 1) endIndex++
-      if ((maskedLines[endIndex] ?? '').trimEnd().endsWith('}')) break
-      let following = endIndex + 1
-      while (following < closeIndex && (maskedLines[following] ?? '').trim() === '') following++
-      if (following >= closeIndex || nesting[following] !== 1 || indentOf(maskedLines[following]) <= indentOf(maskedLines[index])) break
-      endIndex = following
-    }
+    const endIndex = statementEnd(maskedLines, nesting, index, 1, closeIndex)
 
     members.push({
       kind: method ? 'method' : 'property',
@@ -404,4 +455,20 @@ function kdocSummaryAbove(lines: readonly string[], startIndex: number): string 
   }, '')
   if (joined === '') return null
   return /^.*?(?:。|\.(?=\s|$))/.exec(joined)?.[0] ?? joined
+}
+
+/**
+ * Last line of the declaration starting at `index`: where nesting returns to `base`, extended over
+ * more-indented continuation lines unless the declaration ended with a block. `bound` is the first line it may not reach.
+ */
+function statementEnd(maskedLines: readonly string[], nesting: readonly number[], index: number, base: number, bound: number): number {
+  let endIndex = index
+  for (;;) {
+    while (endIndex + 1 < bound && nesting[endIndex + 1] !== base) endIndex++
+    if ((maskedLines[endIndex] ?? '').trimEnd().endsWith('}')) return endIndex
+    let following = endIndex + 1
+    while (following < bound && (maskedLines[following] ?? '').trim() === '') following++
+    if (following >= bound || nesting[following] !== base || indentOf(maskedLines[following]) <= indentOf(maskedLines[index])) return endIndex
+    endIndex = following
+  }
 }
