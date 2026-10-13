@@ -23,4 +23,11 @@ export function renderUserMessage(context: QuestionContext): string {
   return `context:\n${JSON.stringify(context, null, 2)}\n\n質問: ${context.question}`
 }
 
-export const answerJsonSchema = z.toJSONSchema(answerSchema)
+function withoutMetaSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const { $schema: _metaSchema, ...rest } = schema
+  return rest
+}
+
+// The claude CLI's validator does not know zod's default draft 2020-12 meta-schema URI and rejects
+// the whole schema, so the declaration is dropped; the keywords used here are draft-07 compatible.
+export const answerJsonSchema = withoutMetaSchema(z.toJSONSchema(answerSchema, { target: 'draft-7' }))
