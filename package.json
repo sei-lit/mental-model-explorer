@@ -3,8 +3,8 @@
   "description": "Explore a software project as a shared mental model and ask AI about whatever you are looking at",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
+    "build": "tsc -b && vite build && vite build --ssr server/main.ts --outDir dist/server",
+    "start": "npm run build && node dist/server/main.js",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
@@ -27,5 +27,15 @@
     "vitest": "^5.0.4"
   },
   "private": true,
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "bin": {
+    "mental-model-explorer": "bin/mental-model-explorer.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
 }
