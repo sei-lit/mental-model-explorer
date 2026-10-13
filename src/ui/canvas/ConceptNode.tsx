@@ -4,6 +4,7 @@ import type { Perspective } from '../../core/exploration/state'
 import type { Emphasis } from '../overlay'
 import { kindIcon, kindText, provenanceLabel } from '../labels'
 import { NODE_HEIGHT, NODE_WIDTH } from './layout'
+import type { Partners } from './focus'
 import { useZoomLevel } from './zoomLevel'
 
 export interface ConceptNodeData extends Record<string, unknown> {
@@ -16,6 +17,8 @@ export interface ConceptNodeData extends Record<string, unknown> {
   outlined: boolean
   enterable: boolean
   layerColor: string | null
+  /** Only while edges are hidden in focus mode. */
+  partners: Partners | null
   onEnter: (nodeId: string) => void
 }
 
@@ -36,6 +39,7 @@ export function ConceptNode({ data }: NodeProps<ConceptFlowNode>) {
     outlined ? 'outlined' : '',
     perspective === 'flow' && !viewNode.inFlow ? 'out-of-flow' : '',
     enterable ? 'enterable' : '',
+    viewNode.role === 'member' && viewNode.changes > 0 ? 'changed' : '',
   ]
 
   return (
@@ -50,7 +54,17 @@ export function ConceptNode({ data }: NodeProps<ConceptFlowNode>) {
           </span>
           <span className="node-name">{node.name}</span>
           {viewNode.role === 'context' && <span className="badge">範囲外</span>}
+          {viewNode.role === 'member' && viewNode.changes > 0 && (
+            <span className="badge changed-badge" title="PR で変更された宣言の数（この要素の中を含む）">
+              変更 {viewNode.changes}
+            </span>
+          )}
         </div>
+        {data.partners && (
+          <div className="node-partners" title="この粒度でまとめた関係の相手の数（出ていく / 入ってくる）">
+            → {data.partners.outgoing} ・ ← {data.partners.incoming}
+          </div>
+        )}
         {zoom !== 'far' && (
           <>
             <div className="node-kind">{kindText(node)}</div>

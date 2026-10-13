@@ -43,10 +43,13 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
   const viewports = useRef(new Map<string, Viewport>())
   const cardSequence = useRef(0)
 
-  const { scopeId, perspective, flowId, selection } = exploration
+  const { scopeId, perspective, flowId, aroundChanges, selection } = exploration
+  // The selection only changes the projection while narrowed to changes (it keeps the selected node
+  // drawn); otherwise selecting must not recompute the view of a large graph.
+  const pinnedSelection = aroundChanges ? selection : noSelection
   const view = useMemo(
-    () => projectView(index, { scopeId, perspective, flowId, selection: noSelection }),
-    [index, scopeId, perspective, flowId],
+    () => projectView(index, { scopeId, perspective, flowId, aroundChanges, selection: pinnedSelection }),
+    [index, scopeId, perspective, flowId, aroundChanges, pinnedSelection],
   )
 
   const activeCard = understanding.cards.find((card) => card.id === understanding.activeCardId) ?? null
@@ -160,11 +163,11 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
       <div className="main">
         <div className="canvas-area">
           {view.mode === 'graph' ? (
-            <CanvasErrorBoundary key={layoutKey(scopeId, perspective, flowId)}>
+            <CanvasErrorBoundary key={layoutKey(scopeId, perspective, flowId, aroundChanges)}>
               <GraphCanvas
                 index={index}
                 view={view}
-                layoutKey={layoutKey(scopeId, perspective, flowId)}
+                layoutKey={layoutKey(scopeId, perspective, flowId, aroundChanges)}
                 perspective={perspective}
                 selection={selection}
                 overlay={overlay}
@@ -207,7 +210,7 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
           />
         </div>
         <aside className="side">
-          <Inspector index={index} exploration={exploration} view={view} onSelect={select} onEnter={enter} onQuickQuestion={setQuestion} />
+          <Inspector index={index} exploration={exploration} view={view} onSelect={select} onEnter={enter} onQuickQuestion={setQuestion} onFocusRef={focusRef} />
           <ExplanationPanel
             index={index}
             cards={understanding.cards}

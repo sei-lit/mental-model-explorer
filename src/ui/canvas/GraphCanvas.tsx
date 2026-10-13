@@ -7,12 +7,13 @@ import {
   type EdgeTypes,
   type Viewport,
 } from '@xyflow/react'
-import { useMemo, useRef, type RefObject } from 'react'
+import { useMemo, useRef, useState, type RefObject } from 'react'
 import type { ViewEdge } from '../../core/exploration/projectView'
 import { canEnter, selectedNodeIds, type Perspective, type Selection } from '../../core/exploration/state'
 import type { GraphIndex } from '../../core/model/graphIndex'
 import type { GraphView, ViewOverlay } from '../overlay'
 import { ConceptNode, type ConceptFlowNode } from './ConceptNode'
+import { edgesInFocus, partnerCounts, usesFocusMode } from './focus'
 import { RelationEdge, type RelationFlowEdge } from './RelationEdge'
 import { computeLayout, NODE_HEIGHT, NODE_WIDTH } from './layout'
 import { layerColor } from '../labels'
@@ -72,6 +73,21 @@ function GraphCanvasInner({
   const selectedIds = useMemo(() => new Set(selectedNodeIds(selection)), [selection])
   const selectedEdgeIds = selection.kind === 'edge' ? selection.edgeIds : null
 
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const focusMode = usesFocusMode(perspective, view.edges)
+  const partners = useMemo(() => (focusMode ? partnerCounts(view.edges) : null), [focusMode, view.edges])
+  // The layout above uses every edge, so focusing never moves nodes.
+  const shownEdges = useMemo(() => {
+    if (!focusMode) return view.edges
+    const focusIds = new Set(selectedIds)
+    if (hoveredId) focusIds.add(hoveredId)
+    return edgesInFocus(view.edges, {
+      nodeIds: focusIds,
+      selectedEdgeIds: selectedEdgeIds ?? [],
+      emphasizedEdgeIds: new Set([...overlay.edges.keys(), ...overlay.traceSteps.keys()]),
+    })
+  }, [focusMode, view.edges, selectedIds, hoveredId, selectedEdgeIds, overlay])
+
   const nodes = useMemo<ConceptFlowNode[]>(
     () =>
       view.nodes.map((viewNode) => {
@@ -95,16 +111,17 @@ function GraphCanvasInner({
             outlined: outlinedNodeIds?.has(viewNode.id) ?? false,
             enterable: canEnter(index, viewNode.id),
             layerColor: layerColor(index.layers, viewNode.layer),
+            partners: partners?.get(viewNode.id) ?? null,
             onEnter,
           },
         }
       }),
-    [view, layout, index, perspective, overlay, selectedIds, outlinedNodeIds, onEnter],
+    [view, layout, index, perspective, overlay, selectedIds, outlinedNodeIds, partners, onEnter],
   )
 
   const edges = useMemo<RelationFlowEdge[]>(() => {
     const siblingCount = new Map<string, number>()
-    return view.edges.map((viewEdge) => {
+    return shownEdges.map((viewEdge) => {
       const pair = [viewEdge.source, viewEdge.target].sort().join('|')
       const order = siblingCount.get(pair) ?? 0
       siblingCount.set(pair, order + 1)
@@ -136,7 +153,7 @@ function GraphCanvasInner({
         },
       }
     })
-  }, [view, layout, overlay, selectedEdgeIds, perspective, onSelectEdge])
+  }, [shownEdges, layout, overlay, selectedEdgeIds, perspective, onSelectEdge])
 
   return (
     <ZoomLevelContext.Provider value={zoomLevel.current}>
@@ -165,11 +182,36 @@ function GraphCanvasInner({
         onMoveEnd={(_event, viewport) => viewports.current.set(layoutKey, viewport)}
         onNodeClick={(event, node) => onSelectNode(node.id, event.shiftKey || event.metaKey || event.ctrlKey)}
         onNodeDoubleClick={(_event, node) => onEnter(node.id)}
+        onNodeMouseEnter={focusMode ? (_event, node) => setHoveredId(node.id) : undefined}
+        onNodeMouseLeave={focusMode ? () => setHoveredId(null) : undefined}
         onPaneClick={onClearSelection}
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={24} />
       </ReactFlow>
+      <CanvasHints view={view} focusHint={focusMode && shownEdges.length === 0 ? view.edges.length : null} />
     </ZoomLevelContext.Provider>
+  )
+}
+
+function CanvasHints({ view, focusHint }: { view: GraphView; focusHint: number | null }) {
+  const lines: string[] = []
+  if (view.changeFocus) {
+    lines.push(
+      !view.changeFocus.changedHere
+        ? 'この範囲に PR の変更はありません'
+        : view.changeFocus.hiddenNodes > 0
+          ? `PR の変更と、その直接の相手だけを表示しています（ほか ${view.changeFocus.hiddenNodes} 個は非表示）`
+          : 'PR で変更された要素に「変更」の印を付けています',
+    )
+  }
+  if (focusHint !== null) lines.push(`関係が多いため、選んだ・ポイントした要素の関係だけを表示します（${focusHint} 本）`)
+  if (lines.length === 0) return null
+  return (
+    <div className="canvas-hint">
+      {lines.map((line) => (
+        <div key={line}>{line}</div>
+      ))}
+    </div>
   )
 }

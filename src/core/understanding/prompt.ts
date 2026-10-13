@@ -9,6 +9,8 @@ context を手がかりに、ユーザーが何について問うているかを
 
 - 質問の対象は context.target と context.subject です。context.lens は抽象度と視点、
   context.trail はそこに至るまでの探索、context.previous は直前の回答です。
+- context.changes があれば、ユーザーはその PR を読んでいます。changes.inScope は今の範囲で PR が変更した宣言です。
+  PR について問われたら、変更された宣言と、それに依存する・それが依存する要素の関係から説明してください。
 - Claim の provenance が "observed" のものはコードで確認できる事実、"inferred" のものは推測です。
   推測に基づく部分は文中で推測だとわかるように書いてください。
 - segments の各文には、その文が説明しているノード ID / エッジ ID を refs に入れてください。

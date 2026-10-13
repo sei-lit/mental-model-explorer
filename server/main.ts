@@ -10,6 +10,8 @@ import { defaultSettings, prepareApi } from './setup'
 const usage = `Usage: mental-model-explorer [options]
 
   --project <path>  開くリポジトリのルート。Gradle KMP と Swift Package を検出する (default: 同梱のサンプル)
+  --pr <n>          この番号の PR の変更を重ねて開く（gh で取得。PR のブランチを checkout しておく）
+  --diff <ref>      ref との差分（作業ツリーの未コミット分を含む）を重ねて開く
   --port <n>        待ち受けるポート (default: 5178)
   --model <name>    claude CLI に渡すモデル (default: ${defaultSettings.model})
   --claude <path>   claude コマンドのパス (default: claude)
@@ -20,6 +22,8 @@ const usage = `Usage: mental-model-explorer [options]
 const { values } = parseArgs({
   options: {
     project: { type: 'string' },
+    pr: { type: 'string' },
+    diff: { type: 'string' },
     port: { type: 'string', default: '5178' },
     model: { type: 'string', default: defaultSettings.model },
     claude: { type: 'string', default: defaultSettings.claudeCommand },
@@ -40,6 +44,13 @@ if (!Number.isInteger(port) || port <= 0) {
   process.exit(1)
 }
 
+const prNumber = values.pr === undefined ? null : Number(values.pr)
+if (prNumber !== null && (!Number.isInteger(prNumber) || prNumber <= 0)) {
+  console.error(`--pr が不正です: ${values.pr}`)
+  process.exit(1)
+}
+const changes = prNumber !== null ? { kind: 'pr' as const, number: prNumber } : values.diff !== undefined ? { kind: 'base' as const, ref: values.diff } : null
+
 const clientDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'client')
 if (!existsSync(join(clientDir, 'index.html'))) {
   console.error(`ビルド済みの UI が見つかりません (${clientDir})。先に npm run build を実行してください。`)
@@ -52,6 +63,7 @@ try {
     ...defaultSettings,
     forceMock: values.mock,
     projectPath: values.project === undefined ? null : resolve(process.cwd(), values.project),
+    changes,
     claudeCommand: values.claude,
     model: values.model,
   })
@@ -80,6 +92,11 @@ server.listen(port, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${port}`
   console.log(`Mental Model Explorer: ${url}`)
   console.log(`Project: ${projectName} (${options.graph.nodes.length} nodes, ${options.graph.edges.length} edges)`)
+  const changeSet = options.graph.changes
+  if (changeSet) {
+    console.log(`Changes: ${changeSet.title} (${changeSet.files.length} files, ${changeSet.nodeIds.length} declarations)`)
+    for (const warning of changeSet.warnings) console.log(`  ⚠ ${warning}`)
+  }
   console.log(mockReason ? `AI: モック応答 (${mockReason})` : `AI: claude CLI (サブスクリプション, model=${options.model})`)
   if (!values['no-open']) openBrowser(url)
 })

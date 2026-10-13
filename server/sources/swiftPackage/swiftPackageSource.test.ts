@@ -95,6 +95,14 @@ describe('loading a Swift package', () => {
     expect(edgeIds(graph, 'depends_on').filter((id) => id.startsWith('ios:extends:'))).toEqual(['ios:extends:ios:ext:ItemFeature.Item->ios:type:ItemModel.Item'])
   })
 
+  it('records the full line range of a type in every file it is declared or extended in', async () => {
+    const graph = await loadMini()
+    expect(nodeOf(graph, 'ios:type:ItemModel.Item').spans).toEqual([
+      { path: 'AppPackage/Sources/ItemModel/Item.swift', startLine: 4, endLine: 7 },
+      { path: 'AppPackage/Sources/ItemModel/Item+Title.swift', startLine: 1, endLine: 5 },
+    ])
+  })
+
   it('finds members including property wrappers, init and operators, and skips enum cases', async () => {
     const graph = await loadMini()
     const members = (typeId: string) => graph.nodes.filter((node) => node.parentId === typeId).map((node) => `${node.kind}:${node.name}`)

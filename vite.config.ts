@@ -13,6 +13,7 @@ function explorerApi(): Plugin {
         ...defaultSettings,
         forceMock: process.env.MME_MOCK === '1',
         projectPath: process.env.MME_PROJECT ? resolve(process.env.MME_PROJECT) : null,
+        changes: process.env.MME_PR ? { kind: 'pr', number: Number(process.env.MME_PR) } : process.env.MME_DIFF ? { kind: 'base', ref: process.env.MME_DIFF } : null,
       })
       server.config.logger.info(mockReason ? `AI: モック応答 (${mockReason})` : `AI: claude CLI (model=${options.model})`)
       server.middlewares.use(createApiMiddleware(options))

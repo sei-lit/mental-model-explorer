@@ -60,10 +60,37 @@ export function TopBar({ index, exploration, config, dispatch }: TopBarProps) {
           <FlowSelect index={index} scopeId={exploration.scopeId} flowId={exploration.flowId} onChange={(flowId) => dispatch({ type: 'setFlow', flowId })} />
         )}
       </div>
+      {index.graph.changes && (
+        <ChangeToggle
+          title={index.graph.changes.title}
+          warnings={index.graph.changes.warnings}
+          on={exploration.aroundChanges}
+          onChange={(on) => dispatch({ type: 'setAroundChanges', on })}
+        />
+      )}
       <div className="responder-status" title="回答の生成元">
         AI: {config.responder === 'claude-cli' ? `claude CLI${config.model ? ` (${config.model})` : ''}` : 'モック'}
       </div>
     </header>
+  )
+}
+
+function ChangeToggle({ title, warnings, on, onChange }: { title: string; warnings: string[]; on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <div className="change-toggle">
+      <span className="change-title" title={title}>
+        {title}
+      </span>
+      {warnings.length > 0 && (
+        <span className="change-warning" title={warnings.join('\n')}>
+          ⚠
+        </span>
+      )}
+      <label>
+        <input type="checkbox" checked={on} onChange={(event) => onChange(event.target.checked)} />
+        変更周辺だけ
+      </label>
+    </div>
   )
 }
 

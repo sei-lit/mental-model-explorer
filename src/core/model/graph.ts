@@ -36,6 +36,13 @@ export interface CodeSnippet {
   text: string
 }
 
+/** Where a declaration is written, with its full line range (`code.text` is a capped excerpt). */
+export interface SourceSpan {
+  path: string
+  startLine: number
+  endLine: number
+}
+
 export interface GraphNode {
   id: string
   kind: NodeKind
@@ -50,6 +57,8 @@ export interface GraphNode {
   role?: Claim
   constraints?: Claim[]
   code?: CodeSnippet
+  /** Several for a Swift type spread over extensions. Used to find the declarations a diff touches. */
+  spans?: SourceSpan[]
 }
 
 export type RelationKind = 'depends_on' | 'implements' | 'calls' | 'observes' | 'creates' | 'passes_data'
@@ -77,6 +86,22 @@ export interface Flow {
   steps: FlowStep[]
 }
 
+export type FileChangeStatus = 'added' | 'modified' | 'deleted' | 'renamed'
+
+/** A pull request (or a diff against a base) laid over the graph, so it can be explored and asked about. */
+export interface ChangeSet {
+  title: string
+  url: string | null
+  /** Excerpt of the PR description. */
+  description: string
+  base: string
+  /** The most specific declarations whose lines the diff touches. */
+  nodeIds: string[]
+  files: { path: string; status: FileChangeStatus; nodeIds: string[] }[]
+  /** Why the change set may not match the analysed code (e.g. HEAD is not the PR's head). */
+  warnings: string[]
+}
+
 export interface ProjectGraph {
   rootId: string
   /** Without it the clean-architecture layers presentation → domain ← data are assumed. */
@@ -84,6 +109,7 @@ export interface ProjectGraph {
   nodes: GraphNode[]
   edges: GraphEdge[]
   flows: Flow[]
+  changes?: ChangeSet
 }
 
 export const defaultLayers: LayerDefinition[] = [

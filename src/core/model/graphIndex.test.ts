@@ -41,4 +41,20 @@ describe('GraphIndex', () => {
     expect(index.childOfScopeContaining('pkg.Data', 'method.VM.load')).toBeNull()
     expect(index.childOfScopeContaining('type.VM', 'type.VM')).toBeNull()
   })
+
+  it('counts changed declarations at and below each node', () => {
+    const graph = miniGraph()
+    graph.changes = { title: 'PR', url: null, description: '', base: 'abc', nodeIds: ['method.VM.load', 'type.View', 'type.GW'], files: [], warnings: [] }
+    const index = new GraphIndex(graph)
+    expect(index.changesWithin('type.VM')).toBe(1)
+    expect(index.changesWithin('mod.Screen')).toBe(2)
+    expect(index.changesWithin('project')).toBe(3)
+    expect(index.changesWithin('pkg.Domain')).toBe(0)
+  })
+
+  it('rejects a change set that points at a missing node', () => {
+    const graph = miniGraph()
+    graph.changes = { title: 'PR', url: null, description: '', base: 'abc', nodeIds: ['type.Missing'], files: [], warnings: [] }
+    expect(() => new GraphIndex(graph)).toThrow(/unknown node type.Missing/)
+  })
 })

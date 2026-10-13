@@ -22,6 +22,8 @@ export interface Viewpoint {
   scopeId: string
   perspective: Perspective
   flowId: string | null
+  /** Only while a change set is laid over the graph: show the changed elements and their direct partners. */
+  aroundChanges: boolean
   selection: Selection
 }
 
@@ -31,6 +33,7 @@ export type TrailStep =
   | { action: 'perspective'; perspective: Perspective; flowId: string | null }
   | { action: 'ask'; question: string; selection: Selection }
   | { action: 'restore'; scopeId: string }
+  | { action: 'aroundChanges'; on: boolean }
 
 export interface ExplorationState extends Viewpoint {
   /** Navigation history for back/forward. Each entry is a full viewpoint. */
@@ -46,6 +49,7 @@ export type ExplorationAction =
   | { type: 'toggleNodeInSelection'; nodeId: string }
   | { type: 'setPerspective'; perspective: Perspective }
   | { type: 'setFlow'; flowId: string }
+  | { type: 'setAroundChanges'; on: boolean }
   | { type: 'recordQuestion'; question: string }
   | { type: 'restore'; viewpoint: Viewpoint }
   | { type: 'back' }
@@ -61,13 +65,15 @@ export function initialExploration(index: GraphIndex): ExplorationState {
     scopeId: index.root.id,
     perspective: 'structure',
     flowId: index.graph.flows[0]?.id ?? null,
+    // Opening a project with a PR laid over it is a request to look at that PR.
+    aroundChanges: index.hasChanges,
     selection: noSelection,
   }
   return { ...viewpoint, history: [viewpoint], historyIndex: 0, trail: [{ action: 'enter', scopeId: viewpoint.scopeId }] }
 }
 
 export function viewpointOf(state: ExplorationState): Viewpoint {
-  return { scopeId: state.scopeId, perspective: state.perspective, flowId: state.flowId, selection: state.selection }
+  return { scopeId: state.scopeId, perspective: state.perspective, flowId: state.flowId, aroundChanges: state.aroundChanges, selection: state.selection }
 }
 
 /** Flows with a step inside the scope, in graph order. */
@@ -131,6 +137,10 @@ export function createExplorationReducer(index: GraphIndex) {
           perspective: 'flow',
           flowId: action.flowId,
         })
+      }
+      case 'setAroundChanges': {
+        if (action.on === state.aroundChanges || (action.on && !index.hasChanges)) return state
+        return navigate(state, { ...viewpointOf(state), aroundChanges: action.on }, { action: 'aroundChanges', on: action.on })
       }
       case 'recordQuestion':
         return withTrail(state, { action: 'ask', question: action.question, selection: state.selection })

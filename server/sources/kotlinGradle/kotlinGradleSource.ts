@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
 import { deriveFlows, resolveCalls, type CallSite, type EntryKind, type FunctionFacts, type TypeFacts } from '../common/callGraph'
-import type { Claim, GraphEdge, GraphNode, LayerDefinition, ProjectGraph } from '../../../src/core/model/graph'
+import type { Claim, GraphEdge, GraphNode, LayerDefinition, ProjectGraph, SourceSpan } from '../../../src/core/model/graph'
+import { spanOf } from '../common/spans'
 import type { ProjectSource } from '../../../src/data/projectSource'
 import { parseModuleDependencies } from './buildScript'
 import type { KotlinCall, KotlinTypedName } from './kotlinCalls'
@@ -38,6 +39,8 @@ interface TypeEntry {
   file: KotlinFile
   filePath: string
   module: ModuleInfo
+  /** actual declarations of an expect type in other source sets; only the first declaration becomes nodes. */
+  counterparts: SourceSpan[]
 }
 
 interface FunctionEntry {
@@ -133,7 +136,9 @@ export class KotlinGradleProjectSource implements ProjectSource {
           for (const declaration of file.declarations) {
             const fqn = file.packageName ? `${file.packageName}.${declaration.name}` : declaration.name
             // expect/actual declarations share a name across source sets; the first one (commonMain) wins.
-            if (!types.has(fqn)) types.set(fqn, { fqn, declaration, file, filePath, module })
+            const existing = types.get(fqn)
+            if (existing) existing.counterparts.push(spanOf(filePath, declaration))
+            else types.set(fqn, { fqn, declaration, file, filePath, module, counterparts: [] })
           }
           for (const declaration of file.functions) {
             const base = `fn:${file.packageName ? `${file.packageName}.` : ''}${declaration.name}`
@@ -180,6 +185,7 @@ export class KotlinGradleProjectSource implements ProjectSource {
         ...(declaration.members.length === 0
           ? { code: { language: 'kotlin' as const, path: filePath, startLine: declaration.startLine, text: capLines(declaration.text) } }
           : {}),
+        spans: [spanOf(filePath, declaration), ...entry.counterparts],
       })
       for (const { id, member, name } of memberNodes(entry)) {
         nodes.push({
@@ -189,6 +195,7 @@ export class KotlinGradleProjectSource implements ProjectSource {
           parentId: typeId,
           summary: member.signature,
           code: { language: 'kotlin', path: filePath, startLine: member.startLine, text: member.text },
+          spans: [spanOf(filePath, member)],
         })
       }
     }
@@ -201,6 +208,7 @@ export class KotlinGradleProjectSource implements ProjectSource {
         parentId: namespaceIds.get(entry.packageName) ?? moduleId,
         summary: declaration.signature,
         code: { language: 'kotlin', path: entry.filePath, startLine: declaration.startLine, text: declaration.text },
+        spans: [spanOf(entry.filePath, declaration)],
       })
     }
     return nodes
@@ -256,6 +264,7 @@ export class KotlinGradleProjectSource implements ProjectSource {
     return claims
   }
 }
+
 
 function memberNodes(entry: TypeEntry): { id: string; name: string; member: KotlinMember }[] {
   const seen = new Map<string, number>()

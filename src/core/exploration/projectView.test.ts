@@ -5,7 +5,7 @@ import { projectView, type VisibleView } from './projectView'
 import { noSelection, type Viewpoint } from './state'
 
 const index = new GraphIndex(miniGraph())
-const at = (scopeId: string, extra: Partial<Viewpoint> = {}): Viewpoint => ({ scopeId, perspective: 'structure', flowId: 'flow.load', selection: noSelection, ...extra })
+const at = (scopeId: string, extra: Partial<Viewpoint> = {}): Viewpoint => ({ scopeId, perspective: 'structure', flowId: 'flow.load', aroundChanges: false, selection: noSelection, ...extra })
 
 function graphView(view: VisibleView) {
   if (view.mode !== 'graph') throw new Error('expected graph mode')
@@ -103,5 +103,39 @@ describe('projectView', () => {
     if (view.mode !== 'code') throw new Error('expected code mode')
     expect(view.callers.map((edge) => edge.id)).toEqual(['c.load-exec'])
     expect(view.callees.map((edge) => edge.id)).toEqual(['c.exec-fetch'])
+  })
+
+  describe('around changes', () => {
+    const withChanges = (nodeIds: string[]) => {
+      const graph = miniGraph()
+      graph.changes = { title: 'PR', url: null, description: '', base: 'abc', nodeIds, files: [], warnings: [] }
+      return new GraphIndex(graph)
+    }
+
+    it('keeps the changed members, the members drawn connected to them, and nothing else', () => {
+      const view = graphView(projectView(withChanges(['method.Impl.fetch']), at('pkg.Data', { aroundChanges: true })))
+
+      expect(view.nodes.map((node) => [node.id, node.changes])).toEqual([
+        ['mod.Impl', 1],
+        ['mod.Gateway', 0],
+        ['pkg.Domain', 0],
+      ])
+      expect(view.edges.every((edge) => edge.source === 'mod.Impl' || edge.target === 'mod.Impl')).toBe(true)
+      expect(view.changeFocus).toEqual({ changedHere: true, hiddenNodes: 1 })
+    })
+
+    it('keeps a selected node drawn even when it is not near a change', () => {
+      const view = graphView(projectView(withChanges(['type.View']), at('mod.Screen', { aroundChanges: true, selection: { kind: 'node', nodeId: 'type.VM' } })))
+
+      expect(view.nodes.map((node) => node.id)).toContain('type.VM')
+    })
+
+    it('hides nothing in a scope without changes', () => {
+      const index = withChanges(['type.View'])
+      const view = graphView(projectView(index, at('pkg.Data', { aroundChanges: true })))
+
+      expect(view.nodes).toHaveLength(graphView(projectView(index, at('pkg.Data'))).nodes.length)
+      expect(view.changeFocus).toEqual({ changedHere: false, hiddenNodes: 0 })
+    })
   })
 })

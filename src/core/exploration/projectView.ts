@@ -1,6 +1,6 @@
 import type { GraphEdge, GraphNode, LayerDefinition, RelationKind } from '../model/graph'
 import type { GraphIndex } from '../model/graphIndex'
-import type { Perspective, Viewpoint } from './state'
+import { selectedNodeIds, type Perspective, type Viewpoint } from './state'
 
 export type ViewNodeRole = 'member' | 'context'
 
@@ -13,6 +13,8 @@ export interface ViewNode {
   layer: LayerDefinition | null
   /** Only in the flow perspective: whether the node takes part in the selected flow. */
   inFlow: boolean
+  /** Changed declarations at or below the node, when a change set is laid over the graph. */
+  changes: number
 }
 
 export type EdgeConcern = 'layerViolation'
@@ -32,8 +34,17 @@ export interface ViewEdge {
   concerns: EdgeConcern[]
 }
 
+/**
+ * Set while the view is narrowed to changes. When nothing in the scope changed, nothing is hidden:
+ * an empty canvas would tell the user less than the unchanged surroundings do.
+ */
+export interface ChangeFocus {
+  changedHere: boolean
+  hiddenNodes: number
+}
+
 export type VisibleView =
-  | { mode: 'graph'; scopeId: string; nodes: ViewNode[]; edges: ViewEdge[] }
+  | { mode: 'graph'; scopeId: string; nodes: ViewNode[]; edges: ViewEdge[]; changeFocus: ChangeFocus | null }
   | { mode: 'code'; scopeId: string; node: GraphNode; callers: GraphEdge[]; callees: GraphEdge[] }
 
 const relationsByPerspective: Record<Exclude<Perspective, 'flow'>, ReadonlySet<RelationKind>> = {
@@ -100,15 +111,30 @@ export function projectView(index: GraphIndex, viewpoint: Viewpoint): VisibleVie
     childCount: index.children(node.id).length,
     layer: index.layerOf(node.id),
     inFlow: flow ? flowNodeIds.has(node.id) : false,
+    changes: index.changesWithin(node.id),
   })
 
-  return {
-    mode: 'graph',
-    scopeId: scope.id,
-    nodes: [...members.map((node) => toViewNode(node, 'member')), ...[...contextNodes.values()].map((node) => toViewNode(node, 'context'))],
-    edges: [...viewEdges.values()],
-  }
+  const nodes = [...members.map((node) => toViewNode(node, 'member')), ...[...contextNodes.values()].map((node) => toViewNode(node, 'context'))]
+  const edges = [...viewEdges.values()]
+  if (!viewpoint.aroundChanges || !index.hasChanges) return { mode: 'graph', scopeId: scope.id, nodes, edges, changeFocus: null }
+  return { mode: 'graph', scopeId: scope.id, ...aroundChanges(nodes, edges, selectedNodeIds(viewpoint.selection)) }
 }
+
+/**
+ * Changed members, the nodes they are drawn connected to, and the selection (so a selected node never
+ * vanishes). A context node is not a starting point: it is a whole package outside the scope, and a
+ * change somewhere in it says nothing about its edge to this scope.
+ */
+function aroundChanges(nodes: ViewNode[], edges: ViewEdge[], selectedIds: string[]): Pick<GraphView, 'nodes' | 'edges' | 'changeFocus'> {
+  const changed = new Set(nodes.filter((node) => node.role === 'member' && node.changes > 0).map((node) => node.id))
+  if (changed.size === 0) return { nodes, edges, changeFocus: { changedHere: false, hiddenNodes: 0 } }
+  const keptEdges = edges.filter((edge) => changed.has(edge.source) || changed.has(edge.target))
+  const keptIds = new Set([...changed, ...selectedIds, ...keptEdges.flatMap((edge) => [edge.source, edge.target])])
+  const keptNodes = nodes.filter((node) => keptIds.has(node.id))
+  return { nodes: keptNodes, edges: keptEdges, changeFocus: { changedHere: true, hiddenNodes: nodes.length - keptNodes.length } }
+}
+
+type GraphView = Extract<VisibleView, { mode: 'graph' }>
 
 function candidateEdges(index: GraphIndex, viewpoint: Viewpoint): { edge: GraphEdge; step: number | null }[] {
   if (viewpoint.perspective === 'flow') {
