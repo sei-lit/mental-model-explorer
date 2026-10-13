@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { QuestionContext } from '../core/understanding/context'
 
 interface AskBarProps {
@@ -24,6 +25,13 @@ export function AskBar({
   onPreviewChange,
 }: AskBarProps) {
   const canSubmit = question.trim() !== ''
+  const [previewOpen, setPreviewOpen] = useState(false)
+  // The preview is for checking what will be sent; once sent, it would only cover the canvas
+  // where the answer is about to be highlighted.
+  const send = () => {
+    setPreviewOpen(false)
+    onSubmit()
+  }
   return (
     <div className="ask-bar">
       <div className="ask-row">
@@ -43,14 +51,14 @@ export function AskBar({
           placeholder="見ているものについて質問する"
           onChange={(event) => onQuestionChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing && canSubmit) onSubmit()
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing && canSubmit) send()
           }}
         />
-        <button className="primary" disabled={!canSubmit} onClick={onSubmit}>
+        <button className="primary" disabled={!canSubmit} onClick={send}>
           質問
         </button>
       </div>
-      <details className="context-preview">
+      <details className="context-preview" open={previewOpen} onToggle={(event) => setPreviewOpen(event.currentTarget.open)}>
         <summary onMouseEnter={() => onPreviewChange(true)} onMouseLeave={() => onPreviewChange(false)}>
           AI に渡す内容
         </summary>

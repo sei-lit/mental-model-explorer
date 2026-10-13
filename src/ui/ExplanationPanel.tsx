@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { Answer } from '../core/understanding/answer'
 import type { GraphIndex } from '../core/model/graphIndex'
 import { perspectiveLabel } from './labels'
@@ -20,8 +21,13 @@ interface ExplanationPanelProps {
 
 export function ExplanationPanel(props: ExplanationPanelProps) {
   const { cards, activeCardId, onActivate } = props
+  const panel = useRef<HTMLElement>(null)
+  // Newest cards are listed first; bring a just-asked question into view even if the user had scrolled down.
+  useEffect(() => {
+    panel.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [cards.length])
   return (
-    <section className="explanation panel">
+    <section className="explanation panel" ref={panel}>
       <div className="panel-title">
         <h3>説明</h3>
         {activeCardId && (

@@ -14,7 +14,7 @@ import type { GraphIndex } from '../../core/model/graphIndex'
 import type { GraphView, ViewOverlay } from '../overlay'
 import { ConceptNode, type ConceptFlowNode } from './ConceptNode'
 import { RelationEdge, type RelationFlowEdge } from './RelationEdge'
-import { computeLayout } from './layout'
+import { computeLayout, NODE_HEIGHT, NODE_WIDTH } from './layout'
 import { nextZoomLevel, ZoomLevelContext, type ZoomLevel } from './zoomLevel'
 
 import '@xyflow/react/dist/style.css'
@@ -65,7 +65,7 @@ function GraphCanvasInner({
   const zoomLevel = useRef<ZoomLevel>('mid')
   zoomLevel.current = nextZoomLevel(zoomLevel.current, zoom)
 
-  const positions = useMemo(() => computeLayout(view), [view])
+  const layout = useMemo(() => computeLayout(view), [view])
   const savedViewport = useRef(viewports.current.get(layoutKey)).current
 
   const selectedIds = useMemo(() => new Set(selectedNodeIds(selection)), [selection])
@@ -78,7 +78,11 @@ function GraphCanvasInner({
         return {
           id: viewNode.id,
           type: 'concept',
-          position: positions.get(viewNode.id) ?? { x: 0, y: 0 },
+          position: layout.positions.get(viewNode.id) ?? { x: 0, y: 0 },
+          // Node objects are rebuilt on every selection change; without initial dimensions React Flow
+          // hides them until re-measured, and a double-click's second click falls through to the pane.
+          initialWidth: NODE_WIDTH,
+          initialHeight: NODE_HEIGHT,
           draggable: false,
           data: {
             viewNode,
@@ -93,7 +97,7 @@ function GraphCanvasInner({
           },
         }
       }),
-    [view, positions, index, perspective, overlay, selectedIds, outlinedNodeIds, onEnter],
+    [view, layout, index, perspective, overlay, selectedIds, outlinedNodeIds, onEnter],
   )
 
   const edges = useMemo<RelationFlowEdge[]>(() => {
@@ -124,11 +128,12 @@ function GraphCanvasInner({
           showFlowSteps: perspective === 'flow',
           traceSteps,
           labelOffset: order * 20,
+          bends: layout.bends.get(viewEdge.id) ?? null,
           onSelect: onSelectEdge,
         },
       }
     })
-  }, [view, overlay, selectedEdgeIds, perspective, onSelectEdge])
+  }, [view, layout, overlay, selectedEdgeIds, perspective, onSelectEdge])
 
   return (
     <ZoomLevelContext.Provider value={zoomLevel.current}>
