@@ -29,8 +29,13 @@ export async function ask(context: QuestionContext, moduleId: string | null): Pr
   return readJson<AskResult>(response)
 }
 
-export function fetchModuleBrief(moduleId: string): Promise<ModuleBriefResult> {
-  return getJson<ModuleBriefResult>(`/api/module-brief?id=${encodeURIComponent(moduleId)}`)
+export async function fetchModuleBrief(moduleId: string): Promise<ModuleBriefResult> {
+  const response = await fetch('/api/module-brief', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ moduleId }),
+  })
+  return readJson<ModuleBriefResult>(response)
 }
 
 async function getJson<T>(url: string): Promise<T> {

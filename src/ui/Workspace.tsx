@@ -202,7 +202,8 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
     <AskBar
       docked={docked}
       targetLabel={targetLabel}
-      canSwitchTarget={selection.kind !== 'none'}
+      // On the module page there is no graph on screen to ask about as a whole.
+      canSwitchTarget={docked === 'bottom' && selection.kind !== 'none'}
       wholeViewOverride={wholeViewOverride}
       onToggleWholeView={() => setWholeViewFor(wholeViewOverride ? null : selection)}
       question={question}
@@ -306,7 +307,11 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
               setQuestion(followUpQuestion)
             }}
             onHover={(refs) => understand({ type: 'hover', refs })}
-            onShowWhatIf={(id) => understand({ type: 'showWhatIf', id, mode: 'after' })}
+            onShowWhatIf={(id) => {
+              // The removal estimate is drawn on the graph, which the module page covers.
+              setModulePageId(null)
+              understand({ type: 'showWhatIf', id, mode: 'after' })
+            }}
             onHideWhatIf={() => understand({ type: 'hideWhatIf' })}
           />
         </aside>

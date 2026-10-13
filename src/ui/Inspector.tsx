@@ -26,7 +26,7 @@ export function Inspector({ index, exploration, view, onSelect, onEnter, onQuick
       <section className="inspector panel">
         <h3>{index.node(modulePageId).name} を理解する</h3>
         <p className="muted">左のページは AI がソースから作った要約です。わからないところは上の欄から質問できます。回答の根拠はページのコードで確認できます。</p>
-        <Suggestions index={index} selection={selection} modulePageOpen onQuickQuestion={onQuickQuestion} />
+        <Suggestions questions={modulePageQuestions} onQuickQuestion={onQuickQuestion} />
       </section>
     )
   }
@@ -49,7 +49,14 @@ export function Inspector({ index, exploration, view, onSelect, onEnter, onQuick
           </p>
         </div>
       )}
-      <Suggestions index={index} selection={selection} modulePageOpen={false} onQuickQuestion={onQuickQuestion} />
+      {selection.kind === 'nodes' && (
+        <div className="suggestions">
+          <button className="suggestion" onClick={() => onQuickQuestion('この二つの責務はどう違う？')}>
+            比較して質問
+          </button>
+        </div>
+      )}
+      <Suggestions questions={selectionQuestions(index, selection)} onQuickQuestion={onQuickQuestion} />
     </section>
   )
 }
@@ -112,7 +119,6 @@ function ChangesInScope({ index, scopeId, onFocusRef }: { index: GraphIndex; sco
   )
 }
 
-/** Members are listed with their type ("ViewModel.init"); a bare "init" or "body" says nothing in a list. */
 interface NodeDetailProps {
   index: GraphIndex
   nodeId: string
@@ -269,43 +275,33 @@ function EdgeDetail({ index, selection, onSelect }: { index: GraphIndex; selecti
   )
 }
 
-interface SuggestionsProps {
-  index: GraphIndex
-  selection: Selection
-  modulePageOpen: boolean
-  onQuickQuestion: (question: string) => void
-}
+const modulePageQuestions = ['このモジュールが無かったら何が壊れる？', '代表的な処理の流れを順に説明して', '隣のモジュールとどう分担している？']
 
-function Suggestions({ index, selection, modulePageOpen, onQuickQuestion }: SuggestionsProps) {
+function selectionQuestions(index: GraphIndex, selection: Selection): string[] {
   const questions: string[] = []
-  if (modulePageOpen) {
-    questions.push('このモジュールが無かったら何が壊れる？', '代表的な処理の流れを順に説明して', '隣のモジュールとどう分担している？')
-  } else {
-    switch (selection.kind) {
-      case 'node':
-        questions.push('このモジュールの責務は？', `「${index.node(selection.nodeId).name}」を削除するとどうなる？`)
-        break
-      case 'edge':
-        questions.push('なぜこの依存関係が必要なの？')
-        break
-      case 'nodes':
-        break
-      case 'code':
-        questions.push('この処理は何を保証している？')
-        break
-      case 'none':
-        questions.push('この構造の特徴は？')
-        break
-    }
+  switch (selection.kind) {
+    case 'node':
+      questions.push('このモジュールの責務は？', `「${index.node(selection.nodeId).name}」を削除するとどうなる？`)
+      break
+    case 'edge':
+      questions.push('なぜこの依存関係が必要なの？')
+      break
+    case 'nodes':
+      break
+    case 'code':
+      questions.push('この処理は何を保証している？')
+      break
+    case 'none':
+      questions.push('この構造の特徴は？')
+      break
   }
   if (index.graph.changes) questions.push('この PR は何を変えた？影響しうるのはどこ？')
+  return questions
+}
+
+function Suggestions({ questions, onQuickQuestion }: { questions: string[]; onQuickQuestion: (question: string) => void }) {
   return (
     <div className="suggestions">
-      {selection.kind === 'nodes' && (
-        <button className="suggestion" onClick={() => onQuickQuestion('この二つの責務はどう違う？')}>
-          比較して質問
-        </button>
-      )}
       {questions.map((question) => (
         <button key={question} className="suggestion" onClick={() => onQuickQuestion(question)}>
           {question}

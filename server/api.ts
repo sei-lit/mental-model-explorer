@@ -113,9 +113,11 @@ export function createApiMiddleware(options: ApiOptions) {
         const result = await handleAsk(index, options.responder, options.briefs, await readJson(req))
         return sendJson(res, 200, result)
       }
-      if (req.method === 'GET' && url.pathname === '/api/module-brief') {
-        const moduleId = url.searchParams.get('id')
-        if (!moduleId) throw new BadRequestError('id が必要です')
+      // POST, not GET: generating spends the user's subscription, and a GET can be sent from any page
+      // (e.g. an <img>) without an Origin header or a preflight.
+      if (req.method === 'POST' && url.pathname === '/api/module-brief') {
+        const moduleId = ((await readJson(req)) as { moduleId?: unknown } | null)?.moduleId
+        if (typeof moduleId !== 'string') throw new BadRequestError('moduleId が必要です')
         return sendJson(res, 200, await options.briefs.brief(moduleId))
       }
       sendJson(res, 404, { error: 'not found' })

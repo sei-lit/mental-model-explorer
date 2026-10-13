@@ -96,6 +96,7 @@ export class ModuleBriefService {
     try {
       return JSON.parse(readFileSync(file, 'utf8'))
     } catch {
+      // A truncated or hand-edited file is treated as missing: the brief is generated again and overwrites it.
       return null
     }
   }
