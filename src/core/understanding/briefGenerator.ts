@@ -27,7 +27,7 @@ export class MockBriefGenerator implements BriefGenerator {
 
     return {
       purpose: {
-        text: `（モック）${dossier.name}${dossier.summary ? `: ${dossier.summary}` : ''}。役割の要約は claude CLI があると生成されます。`,
+        text: `（モック）${dossier.name}${dossier.summary ? `: ${dossier.summary.replace(/。$/, '')}` : ''}。役割の要約は claude CLI があると生成されます。`,
         evidence: largest.slice(0, 1).map((d) => d.id),
       },
       responsibilities: largest.map((type) => ({
