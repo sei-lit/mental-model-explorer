@@ -38,6 +38,14 @@ describe('buildQuestionContext', () => {
     expect(context.nearby.every((relation) => relation.source.id !== relation.target.id)).toBe(true)
   })
 
+  it('tells who relies on the subject even when they are two hops away', () => {
+    const context = ask(explore({ type: 'select', selection: { kind: 'node', nodeId: 'pkg.Domain' } }))
+
+    if (context.subject.kind !== 'node') throw new Error('expected node subject')
+    expect(context.subject.node.usedBy.direct.map((user) => user.id).sort()).toEqual(['type.Impl', 'type.VM'])
+    expect(context.subject.node.usedBy.indirect.map((user) => user.id)).toEqual(['type.View'])
+  })
+
   it('asks about the whole view when nothing is selected', () => {
     const context = ask(explore())
 

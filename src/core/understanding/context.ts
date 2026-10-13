@@ -3,6 +3,7 @@ import type { GraphIndex } from '../model/graphIndex'
 import { layerOf, projectView, type VisibleView } from '../exploration/projectView'
 import type { ExplorationState, Perspective, TrailStep, Viewpoint } from '../exploration/state'
 import { describeTarget, type QuestionTarget } from './target'
+import { simulateRemoval } from './whatIf'
 
 /**
  * How much of the UI state is sent with a question. The limits keep the context focused on the
@@ -14,6 +15,7 @@ export const contextBudget = {
   nearbyRelations: 15,
   trailSteps: 6,
   memberList: 12,
+  usedBy: 12,
   relationsPerNode: 12,
   aggregatedExamples: 8,
   codeContextLines: 3,
@@ -43,6 +45,11 @@ export interface NodeDetail extends NodeBrief {
   constraints: Claim[]
   members: { id: string; name: string; kind: NodeKind }[]
   relations: RelationBrief[]
+  /**
+   * Who relies on this node, computed from the structure. Users are often two hops away (e.g. the
+   * use case behind a protocol) and would otherwise be invisible to questions about this node.
+   */
+  usedBy: { direct: { id: string; name: string }[]; indirect: { id: string; name: string }[] }
 }
 
 export type Subject =
@@ -359,7 +366,14 @@ function detail(index: GraphIndex, node: GraphNode): NodeDetail {
       .slice(0, contextBudget.memberList)
       .map((child) => ({ id: child.id, name: child.name, kind: child.kind })),
     relations,
+    usedBy: usedBy(index, node.id),
   }
+}
+
+function usedBy(index: GraphIndex, nodeId: string): NodeDetail['usedBy'] {
+  const impact = simulateRemoval(index, [nodeId])
+  const named = (ids: string[]) => ids.slice(0, contextBudget.usedBy).map((id) => ({ id, name: index.node(id).name }))
+  return { direct: named(impact.directlyAffectedIds), indirect: named(impact.transitivelyAffectedIds) }
 }
 
 function relation(index: GraphIndex, edge: GraphEdge): RelationBrief {

@@ -17,6 +17,12 @@ describe('exploration reducer', () => {
     expect(state.selection).toEqual({ kind: 'node', nodeId: 'pkg.Data' })
   })
 
+  it('selects the child the user came from when going back up', () => {
+    const state = run({ type: 'enterScope', scopeId: 'pkg.Data' }, { type: 'enterScope', scopeId: 'mod.Impl' }, { type: 'enterScope', scopeId: 'project' })
+
+    expect(state.selection).toEqual({ kind: 'node', nodeId: 'pkg.Data' })
+  })
+
   it('ignores entering a node that has neither children nor code', () => {
     const state = run({ type: 'enterScope', scopeId: 'prop.VM.empty' })
 
