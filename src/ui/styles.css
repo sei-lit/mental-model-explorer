@@ -873,3 +873,25 @@ button.primary {
 .react-flow__edge.inferred .react-flow__edge-path {
   stroke-dasharray: 2 4;
 }
+
+/* focus mode: dense views draw only the edges around the focus */
+.canvas-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.node-partners {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
