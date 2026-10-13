@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { GraphIndex } from '../src/core/model/graphIndex'
 import { MockResponder } from '../src/core/understanding/mockResponder'
 import type { Responder } from '../src/core/understanding/responder'
@@ -7,11 +5,11 @@ import type { ProjectSource } from '../src/data/projectSource'
 import { bookShelfSource } from '../src/data/sample/bookShelf'
 import type { ApiOptions } from './api'
 import { ClaudeCliResponder, isCommandAvailable } from './claudeCliResponder'
-import { KotlinGradleProjectSource } from './sources/kotlinGradle/kotlinGradleSource'
+import { RepositoryProjectSource } from './sources/repositorySource'
 
 export interface ServerSettings {
   forceMock: boolean
-  /** Root of a Gradle Kotlin Multiplatform repository to open; null opens the bundled sample. */
+  /** Root of a repository with a Kotlin Multiplatform build and/or Swift packages; null opens the bundled sample. */
   projectPath: string | null
   claudeCommand: string
   model: string
@@ -45,9 +43,5 @@ export async function prepareApi(settings: ServerSettings): Promise<PreparedApi>
 }
 
 function projectSource(projectPath: string | null): ProjectSource {
-  if (projectPath === null) return bookShelfSource
-  if (!existsSync(join(projectPath, 'settings.gradle.kts'))) {
-    throw new Error(`${projectPath} に settings.gradle.kts が見つかりません。Gradle の Kotlin プロジェクトのルートを指定してください。`)
-  }
-  return new KotlinGradleProjectSource(projectPath)
+  return projectPath === null ? bookShelfSource : new RepositoryProjectSource(projectPath)
 }
