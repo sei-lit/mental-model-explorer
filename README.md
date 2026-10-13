@@ -40,20 +40,35 @@ npm start            # ビルドして http://127.0.0.1:5178 を開く
 
 ## 自分のプロジェクトを開く
 
-Gradle の Kotlin Multiplatform リポジトリを開けます。
+リポジトリのルートを指定すると、Gradle の Kotlin Multiplatform ビルドと Swift Package を検出して 1 つのグラフにします
+（両方あれば両方。例: KMP と iOS アプリが同居するリポジトリ）。
 
 ```bash
-npm start -- --project /path/to/kmp-repo      # 開発時は MME_PROJECT=/path/to/kmp-repo npm run dev
+npm start -- --project /path/to/repo      # 開発時は MME_PROJECT=/path/to/repo npm run dev
 ```
 
-`settings.gradle.kts` があるディレクトリを指定します。読み取るのは次のものです。
+**Kotlin（ルートの `settings.gradle.kts`）**
 
-- `include(":a:b")` のモジュール（`:tools:` 配下は除外）を、最初のセグメントごとのグループ（core / domain / data / feature / ui / access など）にまとめる
-- 各モジュールの `build.gradle.kts` にある `projects.x.y` / `project(":x:y")` をモジュール間の依存にする
-- `src/{commonMain,androidMain,iosMain,jvmMain,main}/kotlin` の `.kt` から、トップレベルの class / interface / object / enum と、そのメンバー（fun / val / var）を取り出す。supertype は implements、型の参照は依存にする。import・同一パッケージ・ワイルドカード import で一意に決まる名前だけをつなぐ
-- ルートの `CLAUDE.md` に「モジュール構成」「依存の向き」の表があれば、責務と依存してよい範囲を取り込む。これらは**推測**として表示する
+- `include(":a:b")` のモジュール（`:tools:` 配下は除外）を、最初のセグメントごとのグループにまとめる
+- `build.gradle.kts` の `dependencies {}` にある `projects.x.y` / `project(":x:y")` をモジュール間の依存にする（framework の `export` は依存にしない）
+- `src/{commonMain,androidMain,iosMain,jvmMain,main}/kotlin` から、型（class / interface / object / enum）とメンバー（companion object を含む）、トップレベル関数
+- ルートの `CLAUDE.md` に「モジュール構成」「依存の向き」の表があれば、責務と依存してよい範囲（**推測**として表示）
 
-Kotlin の完全な構文解析はしていません（正規表現と簡易スキャナ）。iOS / Swift のプロジェクトには未対応です。
+**Swift（3 階層以内の `Package.swift` で `Sources/` に Swift を持つもの）**
+
+- ターゲットと依存（標準の `.target(...)` と `let x = Target.target(name:, dependencies:, targetGroup:)` 形式）、TargetGroup ごとのグループ
+- 型（struct / class / enum / protocol / actor）とメンバー。同じターゲット内の extension は元の型に統合し、外部の型への extension は別ノード
+- `docs/architecture/module-kinds.md` 等があれば、モジュール種別から一意に決まる層（L0〜L6）と責務（**推測**）。曖昧な種別には層を付けない
+- Kotlin の framework（例: `UsapoShared`）を import するファイルでは、KMP 側で一意な型名に一致した参照を境界辺（推定）としてつなぐ
+
+**共通**
+
+- 型の参照・継承は import と同一モジュール内で一意に決まる名前だけをつなぐ
+- 呼び出し（`receiver.method(`）は引数・プロパティの宣言型から解決し、interface / protocol は実装へのディスパッチも推定する。
+  画面のイベント・ライフサイクル（`onXxx` / `didTapXxx` / `load` / `body` / `viewDidLoad` 等）を入口に「流れ」を作る。
+  これらは静的解析による**推定**で、破線で表示する（DI・クロージャ・フレームワーク経由の呼び出しは含まない）
+
+完全な構文解析はしていません（正規表現と簡易スキャナ）。2 万ノード規模（KMP 17 モジュール + iOS 323 ターゲット）で動作を確認しています。
 
 ## できること
 
@@ -63,7 +78,7 @@ Kotlin の完全な構文解析はしていません（正規表現と簡易ス�
   Type → Method → Code）。入った先では、子要素どうしの依存がその粒度に持ち上げて表示され、外側の要素は
   「枝分かれした階層」の粒度で薄く表示されます。キャンバスのズームでもカードの情報量が変わります。
 - **3 つの視点**: Structure（包含・依存）/ Responsibility（責務・役割・制約。観測か推測かを区別）/
-  Flow（処理の流れを番号付きで）。視点を切り替えても、選択と抽象度はそのまま残ります。
+  Flow（処理の流れを番号付きで。今いる範囲を通る流れを自動で選ぶ）。視点を切り替えても、選択と抽象度はそのまま残ります。
 - **関係を選ぶ**: エッジも選択でき、集約されたエッジは内訳（根拠・理由）を確認できます。層の向きに反する依存は ⚠ で示します。
 - **探索の経路**: 戻る・進むと、パンくずで現在地を保ちます。
 
