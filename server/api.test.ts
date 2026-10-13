@@ -3,10 +3,14 @@ import { GraphIndex } from '../src/core/model/graphIndex'
 import type { Answer } from '../src/core/understanding/answer'
 import type { Responder } from '../src/core/understanding/responder'
 import { miniGraph } from '../src/core/testing/miniGraph'
+import { createExplorationReducer, initialExploration } from '../src/core/exploration/state'
+import { buildQuestionContext } from '../src/core/understanding/context'
 import { BadRequestError, handleAsk, isTrustedRequest } from './api'
 import { ClaudeCliError, parseCliResult } from './claudeCliResponder'
 
 const index = new GraphIndex(miniGraph())
+const exploration = createExplorationReducer(index)(initialExploration(index), { type: 'select', selection: { kind: 'node', nodeId: 'pkg.Data' } })
+const contextAsking = (question: string) => buildQuestionContext({ index, exploration, target: { kind: 'node', nodeId: 'pkg.Data' }, question })
 
 class FixedResponder implements Responder {
   readonly kind = 'claude-cli' as const
@@ -20,7 +24,7 @@ class FixedResponder implements Responder {
 
 const answerWithGhost: Answer = {
   summary: 's',
-  segments: [{ text: 't', refs: ['type.Impl', 'type.Ghost'] }],
+  segments: [{ text: 't', refs: ['pkg.Data', 'type.Ghost', 'method.VM.load'] }],
   highlights: [],
   visuals: [],
   followUps: [],
@@ -28,17 +32,22 @@ const answerWithGhost: Answer = {
 
 describe('handleAsk', () => {
   it('returns the validated answer with issues and the responder that produced it', async () => {
-    const result = await handleAsk(index, new FixedResponder(answerWithGhost), { context: { question: 'なぜ？' } })
+    const result = await handleAsk(index, new FixedResponder(answerWithGhost), { context: contextAsking('なぜ？') })
 
     expect(result.source).toBe('claude-cli')
-    expect(result.answer.segments[0]?.refs).toEqual(['type.Impl'])
-    expect(result.issues).toEqual([{ kind: 'unknownRef', where: 'segment', ref: 'type.Ghost' }])
+    expect(result.answer.segments[0]?.refs).toEqual(['pkg.Data'])
+    // method.VM.load exists in the graph but was not part of what the user was looking at.
+    expect(result.issues).toEqual([
+      { kind: 'unknownRef', where: 'segment', ref: 'type.Ghost' },
+      { kind: 'unknownRef', where: 'segment', ref: 'method.VM.load' },
+    ])
   })
 
   it('rejects a request without a question before calling the responder', async () => {
     const responder = new FixedResponder(answerWithGhost)
 
-    await expect(handleAsk(index, responder, { context: { question: '  ' } })).rejects.toThrow(BadRequestError)
+    await expect(handleAsk(index, responder, { context: contextAsking('  ') })).rejects.toThrow(BadRequestError)
+    await expect(handleAsk(index, responder, { context: { question: 'なぜ？' } })).rejects.toThrow(BadRequestError)
     await expect(handleAsk(index, responder, {})).rejects.toThrow(BadRequestError)
     expect(responder.received).toEqual([])
   })

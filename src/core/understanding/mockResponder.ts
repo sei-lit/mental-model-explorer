@@ -1,7 +1,7 @@
 import type { GraphNode } from '../model/graph'
 import type { GraphIndex } from '../model/graphIndex'
 import type { Answer } from './answer'
-import type { NodeDetail, QuestionContext, RelationBrief } from './context'
+import { referencedIds, type NodeDetail, type QuestionContext, type RelationBrief } from './context'
 import type { Responder } from './responder'
 import { simulateRemoval } from './whatIf'
 
@@ -25,6 +25,10 @@ export class MockResponder implements Responder {
   constructor(private readonly index: GraphIndex) {}
 
   async ask(context: QuestionContext): Promise<Answer> {
+    return onlyShown(this.compose(context), referencedIds(context))
+  }
+
+  private compose(context: QuestionContext): Answer {
     const intent = detectIntent(context)
     switch (intent) {
       case 'remove':
@@ -48,7 +52,8 @@ export class MockResponder implements Responder {
     // A name in the question usually refers to something the user can see, so on-screen matches win.
     const mentioned = mentionedNodes(this.index, context.question)
     const onScreen = new Set(context.visible.nodes.map((node) => node.id))
-    const target = mentioned.find((id) => onScreen.has(id)) ?? mentioned[0] ?? subjectNodeId(context)
+    const shown = referencedIds(context)
+    const target = mentioned.find((id) => onScreen.has(id)) ?? mentioned.find((id) => shown.has(id)) ?? subjectNodeId(context)
     if (!target) return this.overview(context)
     const node = this.index.node(target)
     const impact = simulateRemoval(this.index, [target])
@@ -142,7 +147,7 @@ export class MockResponder implements Responder {
   }
 
   private flow(context: QuestionContext): Answer {
-    const flowId = context.lens.flow?.id ?? this.index.graph.flows[0]?.id
+    const flowId = context.lens.flow?.id
     if (!flowId) return this.overview(context)
     const flow = this.index.flow(flowId)
     const edgeIds = flow.steps.map((step) => step.edgeId)
@@ -200,6 +205,20 @@ export class MockResponder implements Responder {
       visuals: [],
       followUps: hubs.slice(0, 2).map((hub) => ({ question: `「${hub.name}」の責務は？`, focusRef: hub.id })),
     }
+  }
+}
+
+/**
+ * The mock computes impacts over the whole graph, but a well-behaved model can only cite what the
+ * context showed it; dropping the rest keeps the mock's answers passing the same validation.
+ */
+function onlyShown(answer: Answer, shown: ReadonlySet<string>): Answer {
+  return {
+    ...answer,
+    segments: answer.segments.map((segment) => ({ ...segment, refs: segment.refs.filter((ref) => shown.has(ref)) })),
+    highlights: answer.highlights.filter((highlight) => shown.has(highlight.ref)),
+    visuals: answer.visuals.filter((visual) => (visual.type === 'whatIfRemove' ? visual.nodeIds : visual.edgeIds).every((id) => shown.has(id))),
+    followUps: answer.followUps.map((followUp) => (followUp.focusRef && !shown.has(followUp.focusRef) ? { ...followUp, focusRef: null } : followUp)),
   }
 }
 

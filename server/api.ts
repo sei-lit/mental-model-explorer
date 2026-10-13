@@ -2,7 +2,7 @@ import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:
 import type { ProjectGraph } from '../src/core/model/graph'
 import { GraphIndex } from '../src/core/model/graphIndex'
 import { AnswerFormatError, validateAnswer } from '../src/core/understanding/answer'
-import type { QuestionContext } from '../src/core/understanding/context'
+import { referencedIds, type QuestionContext } from '../src/core/understanding/context'
 import type { AskResult, Responder } from '../src/core/understanding/responder'
 import { ClaudeCliError } from './claudeCliResponder'
 
@@ -41,6 +41,22 @@ export function isTrustedRequest(method: string | undefined, headers: IncomingHt
   return true
 }
 
+/**
+ * A shallow check of the fields the server reads. The browser builds the context with the same core
+ * code, so this only guards against requests that did not come from the UI.
+ */
+function isQuestionContext(value: unknown): value is QuestionContext {
+  const context = value as Partial<QuestionContext> | null | undefined
+  return (
+    typeof context?.question === 'string' &&
+    typeof context.lens?.scope?.id === 'string' &&
+    typeof context.subject?.kind === 'string' &&
+    Array.isArray(context.visible?.nodes) &&
+    Array.isArray(context.visible?.edges) &&
+    Array.isArray(context.nearby)
+  )
+}
+
 function parseUrl(text: string): URL | null {
   try {
     return new URL(text)
@@ -50,15 +66,14 @@ function parseUrl(text: string): URL | null {
 }
 
 export async function handleAsk(index: GraphIndex, responder: Responder, body: unknown): Promise<AskResult> {
-  const context = (body as { context?: QuestionContext } | null)?.context
-  if (!context || typeof context.question !== 'string' || context.question.trim() === '') {
-    throw new BadRequestError('context.question が必要です')
-  }
+  const context = (body as { context?: unknown } | null)?.context
+  if (!isQuestionContext(context)) throw new BadRequestError('context が不正です')
+  if (context.question.trim() === '') throw new BadRequestError('context.question が必要です')
   if (context.question.length > MAX_QUESTION_LENGTH) throw new BadRequestError('質問が長すぎます')
   const raw = await responder.ask(context)
   // Validate on the server as well: the server owns the graph, and the browser should never
   // receive ids it would have to second-guess.
-  const { answer, issues } = validateAnswer(raw, index)
+  const { answer, issues } = validateAnswer(raw, index, referencedIds(context))
   return { answer, issues, source: responder.kind }
 }
 

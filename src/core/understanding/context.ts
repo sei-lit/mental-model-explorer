@@ -39,6 +39,15 @@ export interface RelationBrief {
   rationale: Claim | null
 }
 
+export interface FlowStepBrief {
+  step: number
+  edgeId: string
+  from: { id: string; name: string }
+  to: { id: string; name: string }
+  note: string
+  data: string | null
+}
+
 export interface NodeDetail extends NodeBrief {
   responsibility: Claim | null
   role: Claim | null
@@ -74,7 +83,7 @@ export interface QuestionContext {
     perspectiveMeaning: string
     scope: NodeBrief
     showing: string
-    flow: { id: string; name: string; description: string; trigger: string; steps: string[] } | null
+    flow: { id: string; name: string; description: string; trigger: string; steps: FlowStepBrief[] } | null
   }
   subject: Subject
   visible: {
@@ -86,7 +95,7 @@ export interface QuestionContext {
   trail: string[]
   previous: { question: string; summary: string } | null
   /** How much was left out to stay within the budget. Shown to the user next to the context preview. */
-  omitted: { visibleNodes: number; visibleEdges: number; nearbyRelations: number; trailSteps: number; aggregatedExamples: number }
+  omitted: { visibleNodes: number; visibleEdges: number; nearbyRelations: number; trailSteps: number; aggregatedExamples: number; usedBy: number }
 }
 
 const perspectiveMeaning: Record<Perspective, string> = {
@@ -105,7 +114,7 @@ export interface BuildContextInput {
 
 export function buildQuestionContext({ index, exploration, target, question, previous = null }: BuildContextInput): QuestionContext {
   const view = projectView(index, exploration)
-  const omitted = { visibleNodes: 0, visibleEdges: 0, nearbyRelations: 0, trailSteps: 0, aggregatedExamples: 0 }
+  const omitted = { visibleNodes: 0, visibleEdges: 0, nearbyRelations: 0, trailSteps: 0, aggregatedExamples: 0, usedBy: 0 }
 
   const subject = buildSubject(index, target, view, omitted)
   const subjectNodeIds = subjectNodes(target)
@@ -146,8 +155,14 @@ function buildLens(index: GraphIndex, viewpoint: Viewpoint, view: VisibleView): 
       trigger: flow.trigger,
       steps: flow.steps.map((step, i) => {
         const edge = index.edge(step.edgeId)
-        const data = step.data ? ` [${step.data}]` : ''
-        return `${i + 1}. ${index.node(edge.source).name} → ${index.node(edge.target).name} (${edge.id}): ${step.note}${data}`
+        return {
+          step: i + 1,
+          edgeId: edge.id,
+          from: { id: edge.source, name: index.node(edge.source).name },
+          to: { id: edge.target, name: index.node(edge.target).name },
+          note: step.note,
+          data: step.data ?? null,
+        }
       }),
     },
   }
@@ -156,13 +171,13 @@ function buildLens(index: GraphIndex, viewpoint: Viewpoint, view: VisibleView): 
 function buildSubject(index: GraphIndex, target: QuestionTarget, view: VisibleView, omitted: QuestionContext['omitted']): Subject {
   switch (target.kind) {
     case 'node':
-      return { kind: 'node', node: detail(index, index.node(target.nodeId)) }
+      return { kind: 'node', node: detail(index, index.node(target.nodeId), omitted) }
     case 'nodes': {
       const ids = new Set(target.nodeIds)
       const relationsBetween = index.graph.edges
         .filter((edge) => [...ids].some((a) => index.isWithin(edge.source, a)) && [...ids].some((b) => index.isWithin(edge.target, b)))
         .map((edge) => relation(index, edge))
-      return { kind: 'nodes', nodes: target.nodeIds.map((id) => detail(index, index.node(id))), relationsBetween }
+      return { kind: 'nodes', nodes: target.nodeIds.map((id) => detail(index, index.node(id), omitted)), relationsBetween }
     }
     case 'edge': {
       const edges = target.edgeIds.map((id) => index.edge(id))
@@ -185,7 +200,7 @@ function buildSubject(index: GraphIndex, target: QuestionTarget, view: VisibleVi
       const owner = node.parentId ? index.node(node.parentId) : null
       return {
         kind: 'code',
-        node: detail(index, node),
+        node: detail(index, node, omitted),
         owner: owner && brief(index, owner),
         path: code.path,
         lines: target.lines,
@@ -256,9 +271,14 @@ function buildVisible(view: VisibleView, subjectNodeIds: string[], omitted: Ques
   // answer can still refer to the subject's surroundings.
   const touchesSubject = (id: string) => subjectNodeIds.includes(id)
   const edges = [...view.edges].sort((a, b) => Number(touchesSubject(b.source) || touchesSubject(b.target)) - Number(touchesSubject(a.source) || touchesSubject(a.target)))
-  const keptEdges = edges.slice(0, contextBudget.visibleEdges)
-  const nodes = [...view.nodes].sort((a, b) => Number(touchesSubject(b.id)) - Number(touchesSubject(a.id)))
+  const candidateEdges = edges.slice(0, contextBudget.visibleEdges)
+  // Endpoints of kept edges come right after the subject, so an edge is never sent without its ends.
+  const endpointIds = new Set(candidateEdges.flatMap((edge) => [edge.source, edge.target]))
+  const rank = (id: string) => (touchesSubject(id) ? 0 : endpointIds.has(id) ? 1 : 2)
+  const nodes = [...view.nodes].sort((a, b) => rank(a.id) - rank(b.id))
   const keptNodes = nodes.slice(0, contextBudget.visibleNodes)
+  const keptNodeIds = new Set(keptNodes.map((node) => node.id))
+  const keptEdges = candidateEdges.filter((edge) => keptNodeIds.has(edge.source) && keptNodeIds.has(edge.target))
   omitted.visibleEdges = edges.length - keptEdges.length
   omitted.visibleNodes = nodes.length - keptNodes.length
   return {
@@ -351,7 +371,7 @@ export function brief(index: GraphIndex, node: GraphNode): NodeBrief {
   }
 }
 
-function detail(index: GraphIndex, node: GraphNode): NodeDetail {
+function detail(index: GraphIndex, node: GraphNode, omitted: QuestionContext['omitted']): NodeDetail {
   const relations = index.graph.edges
     .filter((edge) => index.isWithin(edge.source, node.id) !== index.isWithin(edge.target, node.id))
     .slice(0, contextBudget.relationsPerNode)
@@ -366,13 +386,16 @@ function detail(index: GraphIndex, node: GraphNode): NodeDetail {
       .slice(0, contextBudget.memberList)
       .map((child) => ({ id: child.id, name: child.name, kind: child.kind })),
     relations,
-    usedBy: usedBy(index, node.id),
+    usedBy: usedBy(index, node.id, omitted),
   }
 }
 
-function usedBy(index: GraphIndex, nodeId: string): NodeDetail['usedBy'] {
+function usedBy(index: GraphIndex, nodeId: string, omitted: QuestionContext['omitted']): NodeDetail['usedBy'] {
   const impact = simulateRemoval(index, [nodeId])
-  const named = (ids: string[]) => ids.slice(0, contextBudget.usedBy).map((id) => ({ id, name: index.node(id).name }))
+  const named = (ids: string[]) => {
+    omitted.usedBy += Math.max(0, ids.length - contextBudget.usedBy)
+    return ids.slice(0, contextBudget.usedBy).map((id) => ({ id, name: index.node(id).name }))
+  }
   return { direct: named(impact.directlyAffectedIds), indirect: named(impact.transitivelyAffectedIds) }
 }
 
@@ -385,4 +408,48 @@ function relation(index: GraphIndex, edge: GraphEdge): RelationBrief {
     evidence: edge.evidence,
     rationale: edge.rationale ?? null,
   }
+}
+
+/**
+ * Every node and edge id the context shows. An answer may only point at these: an id that exists in
+ * the graph but was never shown is a guess, and drawing it would present the guess as grounded.
+ */
+export function referencedIds(context: QuestionContext): Set<string> {
+  const ids = new Set<string>([context.lens.scope.id])
+  const addRelation = (relation: RelationBrief) => {
+    ids.add(relation.id).add(relation.source.id).add(relation.target.id)
+  }
+  const addDetail = (node: NodeDetail) => {
+    ids.add(node.id)
+    for (const member of node.members) ids.add(member.id)
+    node.relations.forEach(addRelation)
+    for (const user of [...node.usedBy.direct, ...node.usedBy.indirect]) ids.add(user.id)
+  }
+
+  const subject = context.subject
+  switch (subject.kind) {
+    case 'node':
+      addDetail(subject.node)
+      break
+    case 'nodes':
+      subject.nodes.forEach(addDetail)
+      subject.relationsBetween.forEach(addRelation)
+      break
+    case 'edge':
+      ids.add(subject.drawn.source.id).add(subject.drawn.target.id)
+      subject.examples.forEach(addRelation)
+      break
+    case 'code':
+      addDetail(subject.node)
+      if (subject.owner) ids.add(subject.owner.id)
+      break
+    case 'view':
+      for (const hub of subject.hubs) ids.add(hub.id)
+      break
+  }
+  for (const node of context.visible.nodes) ids.add(node.id)
+  for (const edge of context.visible.edges) for (const id of edge.edgeIds) ids.add(id)
+  context.nearby.forEach(addRelation)
+  for (const step of context.lens.flow?.steps ?? []) ids.add(step.edgeId).add(step.from.id).add(step.to.id)
+  return ids
 }

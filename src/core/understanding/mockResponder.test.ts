@@ -4,7 +4,7 @@ import { createExplorationReducer, initialExploration, type ExplorationAction, t
 import { bookShelfGraph } from '../../data/sample/bookShelf'
 import { miniGraph } from '../testing/miniGraph'
 import { validateAnswer } from './answer'
-import { buildQuestionContext } from './context'
+import { buildQuestionContext, referencedIds } from './context'
 import { detectIntent, mentionedNodes, MockResponder } from './mockResponder'
 import { targetFromSelection } from './target'
 
@@ -18,7 +18,9 @@ describe('MockResponder', () => {
   const responder = new MockResponder(index)
 
   it('answers a removal question with a what-if visual on the node named in the question', async () => {
-    const answer = await responder.ask(contextFor(index, 'Repository を削除するとどうなる？'))
+    const answer = await responder.ask(
+      contextFor(index, 'Repository を削除するとどうなる？', { type: 'enterScope', scopeId: 'pkg.Domain' }, { type: 'enterScope', scopeId: 'mod.RepoIF' }),
+    )
 
     expect(answer.visuals).toEqual([{ type: 'whatIfRemove', nodeIds: ['type.Repo'] }])
     expect(answer.highlights).toEqual(expect.arrayContaining([{ ref: 'type.UC', role: 'affected' }]))
@@ -36,6 +38,12 @@ describe('MockResponder', () => {
     const answer = await responder.ask(contextFor(index, 'この流れを教えて', { type: 'setPerspective', perspective: 'flow' }))
 
     expect(answer.visuals).toEqual([{ type: 'trace', label: '読み込み', edgeIds: ['c.load-exec', 'c.exec-fetch', 'c.fetch-impl', 'c.impl-get'] }])
+  })
+
+  it('does not name a node the user cannot see, even if the question mentions it', async () => {
+    const answer = await responder.ask(contextFor(index, 'Repository を削除するとどうなる？'))
+
+    expect(answer.visuals).toEqual([])
   })
 
   it('falls back to the kind of target when the question has no keyword', () => {
@@ -72,8 +80,9 @@ describe('MockResponder on the bundled sample', () => {
   // The mock stands in for the real model, so it must never produce references the UI would reject.
   it.each(targets)('only references existing elements for a %s target', async (_, actions) => {
     for (const question of questions) {
-      const raw = await responder.ask(contextFor(index, question, ...actions))
-      expect(validateAnswer(raw, index).issues).toEqual([])
+      const context = contextFor(index, question, ...actions)
+      const raw = await responder.ask(context)
+      expect(validateAnswer(raw, index, referencedIds(context)).issues).toEqual([])
     }
   })
 })

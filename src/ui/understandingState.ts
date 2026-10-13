@@ -78,9 +78,13 @@ export function resultOf(card: AnswerCard | null | undefined): AskResult | null 
   return card?.reply.status === 'done' ? card.reply.result : null
 }
 
-/** The latest answered question, carried into the next question so follow-ups like "それはなぜ？" make sense. */
-export function previousTurn(cards: readonly AnswerCard[]): { question: string; summary: string } | null {
-  for (const card of cards) {
+/**
+ * The answer a follow-up like "それはなぜ？" refers to: the one on screen if it is answered, otherwise
+ * the latest answered one.
+ */
+export function previousTurn(cards: readonly AnswerCard[], activeCardId: string | null): { question: string; summary: string } | null {
+  const active = cards.find((card) => card.id === activeCardId)
+  for (const card of active ? [active, ...cards] : cards) {
     const result = resultOf(card)
     if (result) return { question: card.question, summary: result.answer.summary }
   }

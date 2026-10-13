@@ -52,16 +52,16 @@ export interface ValidatedAnswer {
 export class AnswerFormatError extends Error {}
 
 /**
- * Checks that every id the model referenced exists in the graph. Unknown ids in supporting places
- * are removed and reported; a visual with any unknown id is dropped as a whole, because drawing
- * half of a trace or a removal would show a structure the answer did not describe.
+ * Checks that every id the model referenced exists in the graph and was shown to it. Unknown ids in
+ * supporting places are removed and reported; a visual with any unknown id is dropped as a whole,
+ * because drawing half of a trace or a removal would show a structure the answer did not describe.
  */
-export function validateAnswer(raw: unknown, index: GraphIndex): ValidatedAnswer {
+export function validateAnswer(raw: unknown, index: GraphIndex, shownIds: ReadonlySet<string>): ValidatedAnswer {
   const parsed = answerSchema.safeParse(raw)
   if (!parsed.success) throw new AnswerFormatError(`回答の形式が不正です: ${parsed.error.message}`)
   const answer = parsed.data
   const issues: AnswerIssue[] = []
-  const exists = (ref: string) => index.hasNode(ref) || index.hasEdge(ref)
+  const exists = (ref: string) => shownIds.has(ref) && (index.hasNode(ref) || index.hasEdge(ref))
   const keepKnown = (refs: string[], where: 'segment' | 'highlight' | 'followUp') =>
     refs.filter((ref) => {
       if (exists(ref)) return true
@@ -77,8 +77,8 @@ export function validateAnswer(raw: unknown, index: GraphIndex): ValidatedAnswer
   const visuals = answer.visuals.filter((visual) => {
     const unknownRefs =
       visual.type === 'whatIfRemove'
-        ? visual.nodeIds.filter((id) => !index.hasNode(id))
-        : visual.edgeIds.filter((id) => !index.hasEdge(id))
+        ? visual.nodeIds.filter((id) => !shownIds.has(id) || !index.hasNode(id))
+        : visual.edgeIds.filter((id) => !shownIds.has(id) || !index.hasEdge(id))
     const empty = visual.type === 'whatIfRemove' ? visual.nodeIds.length === 0 : visual.edgeIds.length === 0
     if (unknownRefs.length === 0 && !empty) return true
     issues.push({ kind: 'visualDropped', visual: visual.type, unknownRefs })

@@ -67,7 +67,7 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
   const wholeViewOverride = wholeViewFor !== null && sameSelection(wholeViewFor, selection)
   const target = useMemo<QuestionTarget>(() => (wholeViewOverride ? { kind: 'view' } : targetFromSelection(selection)), [wholeViewOverride, selection])
   const targetLabel = describeTarget(index, target)
-  const previous = useMemo(() => previousTurn(understanding.cards), [understanding.cards])
+  const previous = useMemo(() => previousTurn(understanding.cards, understanding.activeCardId), [understanding.cards, understanding.activeCardId])
 
   const contextPreview = useMemo(
     () => buildQuestionContext({ index, exploration, target, question: question.trim() || '（質問を入力するとここに入ります）', previous }),

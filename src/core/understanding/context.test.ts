@@ -3,7 +3,7 @@ import type { ProjectGraph } from '../model/graph'
 import { GraphIndex } from '../model/graphIndex'
 import { createExplorationReducer, initialExploration, type ExplorationAction, type ExplorationState } from '../exploration/state'
 import { miniGraph } from '../testing/miniGraph'
-import { buildQuestionContext, contextBudget, excerpt, type QuestionContext } from './context'
+import { buildQuestionContext, contextBudget, excerpt, referencedIds, type QuestionContext } from './context'
 import { targetFromSelection } from './target'
 
 const index = new GraphIndex(miniGraph())
@@ -131,6 +131,28 @@ describe('context budget', () => {
     expect(context.omitted.visibleNodes).toBe(53 - contextBudget.visibleNodes)
   })
 
+  it('never sends an edge without both of its endpoints', () => {
+    const wide = new GraphIndex(wideGraph())
+    const exploration = [{ type: 'enterScope', scopeId: 'pkg.Data' } as const, { type: 'enterScope', scopeId: 'mod.Impl' } as const].reduce(
+      createExplorationReducer(wide),
+      initialExploration(wide),
+    )
+    const context = buildQuestionContext({ index: wide, exploration, target: { kind: 'view' }, question: '?' })
+    const sent = new Set(context.visible.nodes.map((node) => node.id))
+
+    expect(context.visible.edges.every((edge) => sent.has(edge.source) && sent.has(edge.target))).toBe(true)
+  })
+
+  it('counts users of the subject that did not fit', () => {
+    const wide = new GraphIndex(wideGraph())
+    const exploration = createExplorationReducer(wide)(initialExploration(wide), { type: 'select', selection: { kind: 'node', nodeId: 'type.Repo' } })
+    const context = buildQuestionContext({ index: wide, exploration, target: targetFromSelection(exploration.selection), question: '?' })
+
+    if (context.subject.kind !== 'node') throw new Error('expected node subject')
+    expect(context.subject.node.usedBy.direct).toHaveLength(contextBudget.usedBy)
+    expect(context.omitted.usedBy).toBeGreaterThan(0)
+  })
+
   it('shows one example per relation kind first for an aggregated edge', () => {
     const graph = wideGraph()
     graph.edges.push({ id: 'e.rare', source: 'type.Impl', target: 'type.Repo', relation: 'creates', evidence: { text: '', provenance: 'observed' } })
@@ -143,6 +165,16 @@ describe('context budget', () => {
     expect(context.subject.examples).toHaveLength(contextBudget.aggregatedExamples)
     expect(context.subject.examples.map((example) => example.relation)).toContain('creates')
     expect(context.omitted.aggregatedExamples).toBe(edgeIds.length - contextBudget.aggregatedExamples)
+  })
+})
+
+describe('referencedIds', () => {
+  it('includes what the context shows and nothing the user was not looking at', () => {
+    const context = ask(explore({ type: 'enterScope', scopeId: 'pkg.Data' }, repositoryToGatewayEdge))
+    const ids = referencedIds(context)
+
+    expect([...ids]).toEqual(expect.arrayContaining(['pkg.Data', 'mod.Impl', 'mod.Gateway', 'type.Impl', 'type.GW', 'e.impl-gw']))
+    expect(ids.has('method.VM.load')).toBe(false)
   })
 })
 

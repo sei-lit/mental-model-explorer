@@ -76,6 +76,7 @@ function ContextSummary({ context }: { context: QuestionContext }) {
     ['周辺の関係', context.omitted.nearbyRelations],
     ['操作履歴', context.omitted.trailSteps],
     ['集約された関係の例', context.omitted.aggregatedExamples],
+    ['依存している要素', context.omitted.usedBy],
   ].filter(([, count]) => (count as number) > 0)
 
   return (

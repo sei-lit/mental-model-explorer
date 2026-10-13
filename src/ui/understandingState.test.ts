@@ -59,6 +59,18 @@ describe('previousTurn', () => {
       { type: 'asked', card: card('b', 'なぜ？') },
     )
 
-    expect(previousTurn(state.cards)).toEqual({ question: '責務は？', summary: '状態を持つ' })
+    expect(previousTurn(state.cards, state.activeCardId)).toEqual({ question: '責務は？', summary: '状態を持つ' })
+  })
+
+  it('prefers the answer the user brought back on screen over a newer one', () => {
+    const state = run(
+      { type: 'asked', card: card('a', '責務は？') },
+      { type: 'answered', id: 'a', result: result('状態を持つ') },
+      { type: 'asked', card: card('b', '削除すると？') },
+      { type: 'answered', id: 'b', result: result('UseCase が壊れる') },
+      { type: 'activate', id: 'a' },
+    )
+
+    expect(previousTurn(state.cards, state.activeCardId)).toEqual({ question: '責務は？', summary: '状態を持つ' })
   })
 })

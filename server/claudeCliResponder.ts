@@ -33,9 +33,13 @@ export class ClaudeCliResponder implements Responder {
       '--json-schema', JSON.stringify(answerJsonSchema),
       '--system-prompt', systemPrompt,
       '--model', this.options.model,
-      // The model only reads the context we pass; it must not run tools against the user's machine.
+      // The model only reads the context we pass; it must not run tools against the user's machine,
+      // and the user's own hooks, plugins, CLAUDE.md and settings must not change the answer.
       '--tools', '',
       '--strict-mcp-config',
+      '--safe-mode',
+      '--restricted',
+      '--permission-prompts', 'none',
       '--no-session-persistence',
     ]
     const stdout = await run(this.options.command, args, renderUserMessage(context), this.workdir, this.options.timeoutMs)

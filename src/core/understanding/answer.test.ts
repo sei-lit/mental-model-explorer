@@ -4,6 +4,7 @@ import { miniGraph } from '../testing/miniGraph'
 import { AnswerFormatError, validateAnswer, type Answer } from './answer'
 
 const index = new GraphIndex(miniGraph())
+const everything = new Set([...index.graph.nodes.map((n) => n.id), ...index.graph.edges.map((e) => e.id)])
 const answer = (overrides: Partial<Answer> = {}): Answer => ({
   summary: 's',
   segments: [{ text: 't', refs: ['type.Impl', 'e.impl-gw'] }],
@@ -15,7 +16,7 @@ const answer = (overrides: Partial<Answer> = {}): Answer => ({
 
 describe('validateAnswer', () => {
   it('accepts an answer whose references all exist', () => {
-    expect(validateAnswer(answer(), index)).toEqual({ answer: answer(), issues: [] })
+    expect(validateAnswer(answer(), index, everything)).toEqual({ answer: answer(), issues: [] })
   })
 
   it('removes unknown references and reports each of them', () => {
@@ -26,6 +27,7 @@ describe('validateAnswer', () => {
         followUps: [{ question: 'q', focusRef: 'type.Ghost' }],
       }),
       index,
+      everything,
     )
 
     expect(cleaned.segments[0]?.refs).toEqual(['type.Impl'])
@@ -48,6 +50,7 @@ describe('validateAnswer', () => {
         ],
       }),
       index,
+      everything,
     )
 
     expect(cleaned.visuals).toEqual([{ type: 'trace', label: 'ok', edgeIds: ['c.load-exec', 'c.exec-fetch'] }])
@@ -57,13 +60,29 @@ describe('validateAnswer', () => {
     ])
   })
 
+  it('treats an existing id that the context never showed as unknown', () => {
+    const shown = new Set(['type.Impl', 'e.impl-gw', 'type.GW'])
+    const { answer: cleaned, issues } = validateAnswer(
+      answer({ highlights: [{ ref: 'type.View', role: 'related' }], visuals: [{ type: 'whatIfRemove', nodeIds: ['type.UC'] }] }),
+      index,
+      shown,
+    )
+
+    expect(cleaned.highlights).toEqual([])
+    expect(cleaned.visuals).toEqual([])
+    expect(issues).toEqual([
+      { kind: 'unknownRef', where: 'highlight', ref: 'type.View' },
+      { kind: 'visualDropped', visual: 'whatIfRemove', unknownRefs: ['type.UC'] },
+    ])
+  })
+
   it('drops a visual that names nothing', () => {
-    const { answer: cleaned } = validateAnswer(answer({ visuals: [{ type: 'whatIfRemove', nodeIds: [] }] }), index)
+    const { answer: cleaned } = validateAnswer(answer({ visuals: [{ type: 'whatIfRemove', nodeIds: [] }] }), index, everything)
     expect(cleaned.visuals).toEqual([])
   })
 
   it('rejects output that does not match the answer shape', () => {
-    expect(() => validateAnswer({ summary: 1 }, index)).toThrow(AnswerFormatError)
-    expect(() => validateAnswer({ ...answer(), visuals: [{ type: 'runScript', code: 'rm -rf /' }] }, index)).toThrow(AnswerFormatError)
+    expect(() => validateAnswer({ summary: 1 }, index, everything)).toThrow(AnswerFormatError)
+    expect(() => validateAnswer({ ...answer(), visuals: [{ type: 'runScript', code: 'rm -rf /' }] }, index, everything)).toThrow(AnswerFormatError)
   })
 })
