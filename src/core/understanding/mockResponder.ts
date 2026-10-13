@@ -45,7 +45,10 @@ export class MockResponder implements Responder {
   }
 
   private removal(context: QuestionContext): Answer {
-    const target = mentionedNodes(this.index, context.question)[0] ?? subjectNodeId(context)
+    // A name in the question usually refers to something the user can see, so on-screen matches win.
+    const mentioned = mentionedNodes(this.index, context.question)
+    const onScreen = new Set(context.visible.nodes.map((node) => node.id))
+    const target = mentioned.find((id) => onScreen.has(id)) ?? mentioned[0] ?? subjectNodeId(context)
     if (!target) return this.overview(context)
     const node = this.index.node(target)
     const impact = simulateRemoval(this.index, [target])
@@ -209,16 +212,16 @@ export function detectIntent(context: QuestionContext): Intent {
   return 'responsibility'
 }
 
-/** Finds nodes whose name or alias appears in the question, longest match first. */
+/** Finds nodes whose name or alias appears in the question: longest match first, an exact name before an alias. */
 export function mentionedNodes(index: GraphIndex, question: string): string[] {
   const lower = question.toLowerCase()
-  const candidates: { node: GraphNode; length: number }[] = []
+  const candidates: { node: GraphNode; length: number; byName: boolean }[] = []
   for (const node of index.graph.nodes) {
     if (node.kind === 'method' || node.kind === 'property') continue
     const hit = [node.name, ...(node.aliases ?? [])].filter((name) => lower.includes(name.toLowerCase())).sort((a, b) => b.length - a.length)[0]
-    if (hit) candidates.push({ node, length: hit.length })
+    if (hit) candidates.push({ node, length: hit.length, byName: hit === node.name })
   }
-  return candidates.sort((a, b) => b.length - a.length).map((candidate) => candidate.node.id)
+  return candidates.sort((a, b) => b.length - a.length || Number(b.byName) - Number(a.byName)).map((candidate) => candidate.node.id)
 }
 
 function subjectNodeId(context: QuestionContext): string | null {
