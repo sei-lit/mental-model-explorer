@@ -134,6 +134,13 @@ describe('loading a Gradle Kotlin Multiplatform project', () => {
     })
   })
 
+  it('records the full line range of types and members', async () => {
+    const { graph } = await loadMini()
+    const path = 'data/repositoryimpl/src/commonMain/kotlin/com/example/data/GetBookUseCaseImpl.kt'
+    expect(nodeNamed(graph, 'type:com.example.data.GetBookUseCaseImpl').spans).toEqual([{ path, startLine: 7, endLine: 19 }])
+    expect(nodeNamed(graph, 'method:com.example.data.GetBookUseCaseImpl.execute').spans).toEqual([{ path, startLine: 11, endLine: 14 }])
+  })
+
   it('keeps member code intact when strings and raw strings contain braces', async () => {
     const { graph } = await loadMini()
     const code = (name: string) => nodeNamed(graph, `method:com.example.core.a.Messages.${name}`).code

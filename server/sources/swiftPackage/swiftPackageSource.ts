@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join, relative, resolve, sep } from 'node:path'
 import type { Claim, GraphEdge, GraphNode, ProjectGraph } from '../../../src/core/model/graph'
+import { spanOf } from '../common/spans'
 import type { ProjectSource } from '../../../src/data/projectSource'
 import { deriveFlows, resolveCalls, type EntryKind, type FunctionFacts, type TypeFacts, type TypeResolver } from '../common/callGraph'
 import { SWIFT_LAYERS } from './layers'
@@ -158,6 +159,7 @@ export class SwiftPackageProjectSource implements ProjectSource {
           ...(members.length === 0 && !target.generated
             ? { code: { language: 'swift' as const, path: primary.file.repoPath, startLine: primary.declaration.startLine, text: primary.declaration.text } }
             : {}),
+          spans: entry.contributions.map((contribution) => spanOf(contribution.file.repoPath, contribution.declaration)),
         })
 
         const propertyTypes = new Map<string, string>()
@@ -172,6 +174,7 @@ export class SwiftPackageProjectSource implements ProjectSource {
             parentId: entry.id,
             summary: member.signature,
             code: { language: 'swift', path: contribution.file.repoPath, startLine: member.startLine, text: member.text },
+            spans: [spanOf(contribution.file.repoPath, member)],
           })
           displayNames.set(id, `${entry.name}.${member.name}`)
           // A stored closure is called like a method; this repository's Repository types are bundles of closures.
@@ -213,7 +216,10 @@ export class SwiftPackageProjectSource implements ProjectSource {
         const parent = parentOf(file)
         for (const fn of file.parsed.functions) {
           const id = memberId(`ios:fn:${target.manifest.name}.${fn.name}`)
-          nodes.push({ id, kind: 'method', name: fn.name, parentId: parent, summary: fn.signature, code: { language: 'swift', path: file.repoPath, startLine: fn.startLine, text: fn.text } })
+          nodes.push({ id, kind: 'method', name: fn.name, parentId: parent, summary: fn.signature,
+            code: { language: 'swift', path: file.repoPath, startLine: fn.startLine, text: fn.text },
+            spans: [spanOf(file.repoPath, fn)],
+          })
           functionIds.set(fn, id)
           displayNames.set(id, fn.name)
           if (fn.calls.length > 0) {
@@ -475,3 +481,4 @@ function swiftFiles(dir: string): string[] {
   }
   return found
 }
+
