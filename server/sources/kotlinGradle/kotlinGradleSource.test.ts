@@ -70,10 +70,10 @@ describe('loading a Gradle Kotlin Multiplatform project', () => {
 
   it('assigns layers to groups and carries the project layer rules', async () => {
     const { graph } = await loadMini()
-    expect(nodeNamed(graph, 'group:domain').layer).toBe('domain')
-    expect(nodeNamed(graph, 'group:data').layer).toBe('data')
+    expect(nodeNamed(graph, 'group:domain').layer).toBe('kmp.domain')
+    expect(nodeNamed(graph, 'group:data').layer).toBe('kmp.data')
     expect(nodeNamed(graph, 'group:core').layer).toBeUndefined()
-    expect(graph.layerRules?.domain).toContain('data')
+    expect(graph.layers?.find((layer) => layer.id === 'kmp.domain')?.mayDependOn).toContain('kmp.data')
   })
 
   it('turns build script dependencies into module edges that point at the script line', async () => {

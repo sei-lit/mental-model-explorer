@@ -11,9 +11,6 @@
   --danger: #c92a2a;
   --related: #4c8dd9;
   --path: #2563eb;
-  --layer-presentation: #7c5cd6;
-  --layer-domain: #1c9a8a;
-  --layer-data: #d99a1c;
   --layer-none: #b5bac6;
   font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', system-ui, sans-serif;
   font-size: 13px;
@@ -213,19 +210,9 @@ select {
   color: #8a6100;
 }
 
-.layer-badge.layer-presentation {
-  background: #e7e0fa;
-  color: var(--layer-presentation);
-}
-
-.layer-badge.layer-domain {
-  background: #d9f2ee;
-  color: var(--layer-domain);
-}
-
-.layer-badge.layer-data {
-  background: #fbefd2;
-  color: #9b6a00;
+.layer-badge {
+  background: #fff;
+  border: 1px solid currentColor;
 }
 
 .meta {
@@ -340,17 +327,6 @@ select {
   flex: none;
 }
 
-.concept-node.layer-presentation .layer-stripe {
-  background: var(--layer-presentation);
-}
-
-.concept-node.layer-domain .layer-stripe {
-  background: var(--layer-domain);
-}
-
-.concept-node.layer-data .layer-stripe {
-  background: var(--layer-data);
-}
 
 .concept-node.role-context {
   border-style: dashed;

@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
+import { gzipSync } from 'node:zlib'
 import type { ProjectGraph } from '../src/core/model/graph'
 import { GraphIndex } from '../src/core/model/graphIndex'
 import { AnswerFormatError, validateAnswer } from '../src/core/understanding/answer'
@@ -83,13 +84,16 @@ type Next = (error?: unknown) => void
 export function createApiMiddleware(options: ApiOptions) {
   const index = new GraphIndex(options.graph)
   const config: AppConfig = { responder: options.responder.kind, model: options.model }
+  // A real repository's graph with code is several megabytes; it never changes while the server runs.
+  const projectJson = Buffer.from(JSON.stringify(options.graph))
+  const projectGzip = gzipSync(projectJson)
 
   return async function api(req: IncomingMessage, res: ServerResponse, next: Next): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost')
     if (!url.pathname.startsWith('/api/')) return next()
     if (!isTrustedRequest(req.method, req.headers)) return sendJson(res, 403, { error: 'forbidden' })
     try {
-      if (req.method === 'GET' && url.pathname === '/api/project') return sendJson(res, 200, options.graph)
+      if (req.method === 'GET' && url.pathname === '/api/project') return sendProject(req, res, projectJson, projectGzip)
       if (req.method === 'GET' && url.pathname === '/api/config') return sendJson(res, 200, config)
       if (req.method === 'POST' && url.pathname === '/api/ask') {
         const result = await handleAsk(index, options.responder, await readJson(req))
@@ -126,6 +130,18 @@ function readJson(req: IncomingMessage): Promise<unknown> {
     })
     req.on('error', reject)
   })
+}
+
+function sendProject(req: IncomingMessage, res: ServerResponse, json: Buffer, gzip: Buffer): void {
+  res.statusCode = 200
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Vary', 'Accept-Encoding')
+  if (/\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) {
+    res.setHeader('Content-Encoding', 'gzip')
+    res.end(gzip)
+  } else {
+    res.end(json)
+  }
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {

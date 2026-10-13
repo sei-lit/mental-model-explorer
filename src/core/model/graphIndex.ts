@@ -1,4 +1,4 @@
-import type { Flow, GraphEdge, GraphNode, ProjectGraph } from './graph'
+import { defaultLayers, type Flow, type GraphEdge, type GraphNode, type LayerDefinition, type ProjectGraph } from './graph'
 
 export class GraphIntegrityError extends Error {}
 
@@ -9,6 +9,12 @@ export class GraphIndex {
   private readonly edgesById: Map<string, GraphEdge>
   private readonly flowsById: Map<string, Flow>
   private readonly childrenById: Map<string, GraphNode[]>
+  private readonly layersById: Map<string, LayerDefinition>
+  private readonly incomingById = new Map<string, GraphEdge[]>()
+  private readonly outgoingById = new Map<string, GraphEdge[]>()
+  // Paths are asked for on every projection and context build; with tens of thousands of nodes,
+  // walking up the parents each time dominates the cost.
+  private readonly pathCache = new Map<string, GraphNode[]>()
 
   constructor(graph: ProjectGraph) {
     this.graph = graph
@@ -16,6 +22,7 @@ export class GraphIndex {
     this.edgesById = uniqueMap(graph.edges, 'edge')
     this.flowsById = uniqueMap(graph.flows, 'flow')
     this.childrenById = new Map()
+    this.layersById = uniqueMap(graph.layers ?? defaultLayers, 'layer')
 
     if (!this.nodesById.has(graph.rootId)) throw new GraphIntegrityError(`root ${graph.rootId} does not exist`)
     for (const node of graph.nodes) {
@@ -33,6 +40,18 @@ export class GraphIndex {
     for (const edge of graph.edges) {
       for (const end of [edge.source, edge.target]) {
         if (!this.nodesById.has(end)) throw new GraphIntegrityError(`edge ${edge.id} refers to missing node ${end}`)
+      }
+      push(this.outgoingById, edge.source, edge)
+      push(this.incomingById, edge.target, edge)
+    }
+    for (const node of graph.nodes) {
+      if (node.layer !== undefined && !this.layersById.has(node.layer)) {
+        throw new GraphIntegrityError(`node ${node.id} refers to missing layer ${node.layer}`)
+      }
+    }
+    for (const layer of this.layersById.values()) {
+      for (const allowed of layer.mayDependOn) {
+        if (!this.layersById.has(allowed)) throw new GraphIntegrityError(`layer ${layer.id} refers to missing layer ${allowed}`)
       }
     }
     for (const flow of graph.flows) {
@@ -81,21 +100,24 @@ export class GraphIndex {
 
   /** Ancestors from the root down to the direct parent (excludes the node itself). */
   ancestors(id: string): GraphNode[] {
-    const chain: GraphNode[] = []
+    return this.path(id).slice(0, -1)
+  }
+
+  /** Root-to-node path including the node itself. */
+  path(id: string): GraphNode[] {
+    const cached = this.pathCache.get(id)
+    if (cached) return cached
+    const chain: GraphNode[] = [this.node(id)]
     const seen = new Set<string>([id])
-    let current = this.node(id)
+    let current = chain[0]!
     while (current.parentId !== null) {
       if (seen.has(current.parentId)) throw new GraphIntegrityError(`containment cycle at ${current.parentId}`)
       seen.add(current.parentId)
       current = this.node(current.parentId)
       chain.unshift(current)
     }
+    this.pathCache.set(id, chain)
     return chain
-  }
-
-  /** Root-to-node path including the node itself. */
-  path(id: string): GraphNode[] {
-    return [...this.ancestors(id), this.node(id)]
   }
 
   isWithin(id: string, containerId: string): boolean {
@@ -111,7 +133,25 @@ export class GraphIndex {
   }
 
   edgesTouching(id: string): GraphEdge[] {
-    return this.graph.edges.filter((edge) => edge.source === id || edge.target === id)
+    return [...this.outgoing(id), ...this.incoming(id)]
+  }
+
+  incoming(id: string): readonly GraphEdge[] {
+    return this.incomingById.get(id) ?? []
+  }
+
+  outgoing(id: string): readonly GraphEdge[] {
+    return this.outgoingById.get(id) ?? []
+  }
+
+  /** The layer of the node or of its nearest ancestor that has one. */
+  layerOf(id: string): LayerDefinition | null {
+    for (const node of [...this.path(id)].reverse()) if (node.layer) return this.layersById.get(node.layer) ?? null
+    return null
+  }
+
+  get layers(): LayerDefinition[] {
+    return [...this.layersById.values()]
   }
 }
 
@@ -122,4 +162,10 @@ function uniqueMap<T extends { id: string }>(items: readonly T[], label: string)
     map.set(item.id, item)
   }
   return map
+}
+
+function push<K, V>(map: Map<K, V[]>, key: K, value: V) {
+  const list = map.get(key)
+  if (list) list.push(value)
+  else map.set(key, [value])
 }

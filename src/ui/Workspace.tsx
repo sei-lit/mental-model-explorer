@@ -69,9 +69,11 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
   const targetLabel = describeTarget(index, target)
   const previous = useMemo(() => previousTurn(understanding.cards, understanding.activeCardId), [understanding.cards, understanding.activeCardId])
 
+  // The preview leaves the question out so typing does not rebuild the context on every keystroke,
+  // which is noticeable on projects with tens of thousands of nodes.
   const contextPreview = useMemo(
-    () => buildQuestionContext({ index, exploration, target, question: question.trim() || '（質問を入力するとここに入ります）', previous }),
-    [index, exploration, target, question, previous],
+    () => buildQuestionContext({ index, exploration, target, question: '（送信時に質問文が入ります）', previous }),
+    [index, exploration, target, previous],
   )
 
   const outlinedNodeIds = useMemo(() => {

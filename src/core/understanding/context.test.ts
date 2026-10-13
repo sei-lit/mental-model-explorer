@@ -37,7 +37,7 @@ describe('buildQuestionContext', () => {
   it('carries the abstraction level and perspective the user is looking from', () => {
     const context = ask(explore({ type: 'enterScope', scopeId: 'pkg.Data' }, { type: 'setPerspective', perspective: 'responsibility' }))
 
-    expect(context.lens.scope).toMatchObject({ id: 'pkg.Data', path: 'App > Data', layer: 'data' })
+    expect(context.lens.scope).toMatchObject({ id: 'pkg.Data', path: 'App > Data', layer: 'Data' })
     expect(context.lens.perspective).toBe('responsibility')
     expect(context.lens.showing).toContain('module')
   })

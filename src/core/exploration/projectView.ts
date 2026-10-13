@@ -1,4 +1,4 @@
-import type { GraphEdge, GraphNode, Layer, RelationKind } from '../model/graph'
+import type { GraphEdge, GraphNode, LayerDefinition, RelationKind } from '../model/graph'
 import type { GraphIndex } from '../model/graphIndex'
 import type { Perspective, Viewpoint } from './state'
 
@@ -10,7 +10,7 @@ export interface ViewNode {
   /** `member` = a child of the current scope; `context` = something outside the scope that members connect to. */
   role: ViewNodeRole
   childCount: number
-  layer: Layer | null
+  layer: LayerDefinition | null
   /** Only in the flow perspective: whether the node takes part in the selected flow. */
   inFlow: boolean
 }
@@ -94,7 +94,7 @@ export function projectView(index: GraphIndex, viewpoint: Viewpoint): VisibleVie
     node,
     role,
     childCount: index.children(node.id).length,
-    layer: layerOf(index, node.id),
+    layer: index.layerOf(node.id),
     inFlow: flow ? flowNodeIds.has(node.id) : false,
   })
 
@@ -133,22 +133,11 @@ function representative(index: GraphIndex, scopeId: string, nodeId: string): { n
   return node ? { node, role: 'context' } : null
 }
 
-export function layerOf(index: GraphIndex, nodeId: string): Layer | null {
-  for (const node of [...index.path(nodeId)].reverse()) if (node.layer) return node.layer
-  return null
-}
-
-/** Clean-architecture direction: presentation → domain ← data. Anything else is flagged for discussion. */
-const defaultLayerRules: Record<Layer, Layer[]> = {
-  presentation: ['presentation', 'domain'],
-  domain: ['domain'],
-  data: ['data', 'domain'],
-}
-
 export function crossesLayerWrongly(index: GraphIndex, edge: GraphEdge): boolean {
   if (edge.relation !== 'depends_on' && edge.relation !== 'implements') return false
-  const from = layerOf(index, edge.source)
-  const to = layerOf(index, edge.target)
-  if (!from || !to) return false
-  return !(index.graph.layerRules ?? defaultLayerRules)[from].includes(to)
+  const from = index.layerOf(edge.source)
+  const to = index.layerOf(edge.target)
+  // Layers of different systems (e.g. Swift code using a Kotlin module) have no rule between them.
+  if (!from || !to || from.system !== to.system) return false
+  return !from.mayDependOn.includes(to.id)
 }

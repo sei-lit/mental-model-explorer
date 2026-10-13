@@ -1,4 +1,4 @@
-import type { RelationKind } from '../model/graph'
+import type { GraphEdge, RelationKind } from '../model/graph'
 import type { GraphIndex } from '../model/graphIndex'
 
 export interface RemovalImpact {
@@ -20,8 +20,16 @@ const propagatingRelations: ReadonlySet<RelationKind> = new Set(['depends_on', '
  * runtime behaviour such as dynamic dispatch fallbacks, so the UI presents it as a structural estimate.
  */
 export function simulateRemoval(index: GraphIndex, nodeIds: readonly string[]): RemovalImpact {
-  const removed = new Set(index.graph.nodes.filter((node) => nodeIds.some((id) => index.isWithin(node.id, id))).map((node) => node.id))
-  const brokenEdges = index.graph.edges.filter((edge) => removed.has(edge.source) || removed.has(edge.target))
+  const removed = new Set<string>()
+  const collect = (id: string) => {
+    if (removed.has(id)) return
+    removed.add(id)
+    for (const child of index.children(id)) collect(child.id)
+  }
+  for (const id of nodeIds) collect(id)
+
+  const brokenEdges = new Set<GraphEdge>()
+  for (const id of removed) for (const edge of index.edgesTouching(id)) brokenEdges.add(edge)
 
   // Affected elements are reported at type granularity or coarser: a method that loses a callee
   // means its owning type is affected, which is what the user sees on the canvas.
@@ -29,6 +37,7 @@ export function simulateRemoval(index: GraphIndex, nodeIds: readonly string[]): 
     const node = index.node(id)
     return node.kind === 'method' || node.kind === 'property' ? (node.parentId ?? id) : id
   }
+  const ownedIds = (id: string) => [id, ...index.children(id).filter((child) => child.kind === 'method' || child.kind === 'property').map((child) => child.id)]
 
   const direct = new Set<string>()
   for (const edge of brokenEdges) {
@@ -43,21 +52,22 @@ export function simulateRemoval(index: GraphIndex, nodeIds: readonly string[]): 
   const queue = [...direct]
   while (queue.length > 0) {
     const current = queue.shift()!
-    for (const edge of index.graph.edges) {
-      // An implementation is not broken because a protocol's other users are; only a removed
-      // protocol (handled as a direct impact above) breaks its implementations.
-      if (!propagatingRelations.has(edge.relation) || edge.relation === 'implements') continue
-      if (owner(edge.target) !== current) continue
-      const user = owner(edge.source)
-      if (removed.has(user) || direct.has(user) || transitive.has(user)) continue
-      transitive.add(user)
-      queue.push(user)
+    for (const target of ownedIds(current)) {
+      for (const edge of index.incoming(target)) {
+        // An implementation is not broken because a protocol's other users are; only a removed
+        // protocol (handled as a direct impact above) breaks its implementations.
+        if (!propagatingRelations.has(edge.relation) || edge.relation === 'implements') continue
+        const user = owner(edge.source)
+        if (removed.has(user) || direct.has(user) || transitive.has(user)) continue
+        transitive.add(user)
+        queue.push(user)
+      }
     }
   }
 
   return {
     removedNodeIds: [...removed],
-    brokenEdgeIds: brokenEdges.map((edge) => edge.id),
+    brokenEdgeIds: [...brokenEdges].map((edge) => edge.id),
     directlyAffectedIds: [...direct],
     transitivelyAffectedIds: [...transitive],
   }

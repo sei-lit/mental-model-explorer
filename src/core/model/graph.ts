@@ -4,9 +4,20 @@
  */
 export type NodeKind = 'project' | 'package' | 'module' | 'namespace' | 'type' | 'property' | 'method'
 
-export type TypeFlavor = 'class' | 'struct' | 'protocol' | 'interface' | 'object' | 'enum'
+/** `extension` stands for extensions of a type declared outside the project (e.g. SwiftUI's View). */
+export type TypeFlavor = 'class' | 'struct' | 'protocol' | 'interface' | 'object' | 'enum' | 'actor' | 'extension'
 
-export type Layer = 'presentation' | 'domain' | 'data'
+/**
+ * An architectural layer as a project defines it. Projects use different layer systems (a three-layer
+ * Kotlin module set next to a seven-layer Swift package), so layers are only compared within one `system`.
+ */
+export interface LayerDefinition {
+  id: string
+  label: string
+  system: string
+  /** Layers of the same system this one may depend on, including itself when same-layer dependencies are allowed. */
+  mayDependOn: string[]
+}
 
 /**
  * A statement about the project. `observed` claims can be checked against the code;
@@ -32,7 +43,8 @@ export interface GraphNode {
   parentId: string | null
   aliases?: string[]
   flavor?: TypeFlavor
-  layer?: Layer
+  /** Id of a LayerDefinition; descendants inherit it. */
+  layer?: string
   summary?: string
   responsibility?: Claim
   role?: Claim
@@ -67,13 +79,15 @@ export interface Flow {
 
 export interface ProjectGraph {
   rootId: string
-  /**
-   * Which layers each layer may depend on. Projects differ (e.g. a use-case implementation layer that
-   * may see repositories), so the rule travels with the graph; without it the clean-architecture
-   * direction presentation → domain ← data is assumed.
-   */
-  layerRules?: Record<Layer, Layer[]>
+  /** Without it the clean-architecture layers presentation → domain ← data are assumed. */
+  layers?: LayerDefinition[]
   nodes: GraphNode[]
   edges: GraphEdge[]
   flows: Flow[]
 }
+
+export const defaultLayers: LayerDefinition[] = [
+  { id: 'presentation', label: 'Presentation', system: 'default', mayDependOn: ['presentation', 'domain'] },
+  { id: 'domain', label: 'Domain', system: 'default', mayDependOn: ['domain'] },
+  { id: 'data', label: 'Data', system: 'default', mayDependOn: ['data', 'domain'] },
+]

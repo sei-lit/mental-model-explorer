@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
-import type { Claim, GraphEdge, GraphNode, Layer, ProjectGraph } from '../../../src/core/model/graph'
+import type { Claim, GraphEdge, GraphNode, LayerDefinition, ProjectGraph } from '../../../src/core/model/graph'
 import type { ProjectSource } from '../../../src/data/projectSource'
 import { parseModuleDependencies } from './buildScript'
 import { capLines, parseKotlinFile, type KotlinDeclaration, type KotlinFile, type KotlinFunction } from './kotlinParser'
@@ -8,20 +8,20 @@ import { parseSettings } from './settings'
 
 const SOURCE_SETS = ['commonMain', 'androidMain', 'iosMain', 'jvmMain', 'main']
 
-const GROUP_LAYERS: Record<string, Layer> = {
-  feature: 'presentation',
-  ui: 'presentation',
-  access: 'presentation',
-  domain: 'domain',
-  data: 'data',
+const GROUP_LAYERS: Record<string, string> = {
+  feature: 'kmp.presentation',
+  ui: 'kmp.presentation',
+  access: 'kmp.presentation',
+  domain: 'kmp.domain',
+  data: 'kmp.data',
 }
 
 // domain:usecaseimpl is allowed to depend on data:repository by the project's CLAUDE.md, so domain may see data.
-const LAYER_RULES: Record<Layer, Layer[]> = {
-  presentation: ['presentation', 'domain'],
-  domain: ['domain', 'data'],
-  data: ['data', 'domain'],
-}
+const LAYERS: LayerDefinition[] = [
+  { id: 'kmp.presentation', label: 'Presentation', system: 'kmp', mayDependOn: ['kmp.presentation', 'kmp.domain'] },
+  { id: 'kmp.domain', label: 'Domain', system: 'kmp', mayDependOn: ['kmp.domain', 'kmp.data'] },
+  { id: 'kmp.data', label: 'Data', system: 'kmp', mayDependOn: ['kmp.data', 'kmp.domain'] },
+]
 
 interface ModuleInfo {
   path: string
@@ -108,7 +108,7 @@ export class KotlinGradleProjectSource implements ProjectSource {
     }
 
     edges.push(...typeEdges(types), ...functionEdges(symbols))
-    return { rootId: 'project', layerRules: LAYER_RULES, nodes, edges, flows: [] }
+    return { rootId: 'project', layers: LAYERS, nodes, edges, flows: [] }
   }
 
   private readSymbols(modules: readonly ModuleInfo[]): Symbols {

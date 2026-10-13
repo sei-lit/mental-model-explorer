@@ -15,6 +15,7 @@ import type { GraphView, ViewOverlay } from '../overlay'
 import { ConceptNode, type ConceptFlowNode } from './ConceptNode'
 import { RelationEdge, type RelationFlowEdge } from './RelationEdge'
 import { computeLayout, NODE_HEIGHT, NODE_WIDTH } from './layout'
+import { layerColor } from '../labels'
 import { nextZoomLevel, ZoomLevelContext, type ZoomLevel } from './zoomLevel'
 
 import '@xyflow/react/dist/style.css'
@@ -93,6 +94,7 @@ function GraphCanvasInner({
             selected: selectedIds.has(viewNode.id),
             outlined: outlinedNodeIds?.has(viewNode.id) ?? false,
             enterable: canEnter(index, viewNode.id),
+            layerColor: layerColor(index.layers, viewNode.layer),
             onEnter,
           },
         }
