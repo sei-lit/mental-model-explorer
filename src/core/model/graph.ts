@@ -1,6 +1,10 @@
-export type NodeKind = 'project' | 'package' | 'module' | 'type' | 'property' | 'method'
+/**
+ * `package` groups modules (a layer or a Swift package); `namespace` is a language-level package
+ * inside a module (e.g. a Kotlin package), which large modules need to stay explorable.
+ */
+export type NodeKind = 'project' | 'package' | 'module' | 'namespace' | 'type' | 'property' | 'method'
 
-export type TypeFlavor = 'class' | 'struct' | 'protocol' | 'enum'
+export type TypeFlavor = 'class' | 'struct' | 'protocol' | 'interface' | 'object' | 'enum'
 
 export type Layer = 'presentation' | 'domain' | 'data'
 
@@ -15,7 +19,7 @@ export interface Claim {
 }
 
 export interface CodeSnippet {
-  language: 'swift'
+  language: 'swift' | 'kotlin'
   path: string
   startLine: number
   text: string
@@ -63,6 +67,12 @@ export interface Flow {
 
 export interface ProjectGraph {
   rootId: string
+  /**
+   * Which layers each layer may depend on. Projects differ (e.g. a use-case implementation layer that
+   * may see repositories), so the rule travels with the graph; without it the clean-architecture
+   * direction presentation → domain ← data is assumed.
+   */
+  layerRules?: Record<Layer, Layer[]>
   nodes: GraphNode[]
   edges: GraphEdge[]
   flows: Flow[]
