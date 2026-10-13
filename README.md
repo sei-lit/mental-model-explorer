@@ -28,6 +28,7 @@ npm start            # ビルドして http://127.0.0.1:5178 を開く
 
 | オプション | 内容 |
 | --- | --- |
+| `--project <path>` | 開く Gradle Kotlin プロジェクトのルート（既定は同梱のサンプル） |
 | `--model <name>` | `claude` に渡すモデル（既定 `sonnet`。深く考えさせたいときは `opus`） |
 | `--mock` | `claude` を使わず、グラフのデータから組み立てるモック応答で動かす |
 | `--port <n>` | ポート（既定 5178） |
@@ -36,6 +37,23 @@ npm start            # ビルドして http://127.0.0.1:5178 を開く
 
 `npm start -- --mock` のように `--` の後ろに渡します。`claude` が見つからない場合は自動でモック応答になります。
 開発時は `npm run dev`（Vite。`MME_MOCK=1` でモック）、テストは `npm test`。
+
+## 自分のプロジェクトを開く
+
+Gradle の Kotlin Multiplatform リポジトリを開けます。
+
+```bash
+npm start -- --project /path/to/kmp-repo      # 開発時は MME_PROJECT=/path/to/kmp-repo npm run dev
+```
+
+`settings.gradle.kts` があるディレクトリを指定します。読み取るのは次のものです。
+
+- `include(":a:b")` のモジュール（`:tools:` 配下は除外）を、最初のセグメントごとのグループ（core / domain / data / feature / ui / access など）にまとめる
+- 各モジュールの `build.gradle.kts` にある `projects.x.y` / `project(":x:y")` をモジュール間の依存にする
+- `src/{commonMain,androidMain,iosMain,jvmMain,main}/kotlin` の `.kt` から、トップレベルの class / interface / object / enum と、そのメンバー（fun / val / var）を取り出す。supertype は implements、型の参照は依存にする。import・同一パッケージ・ワイルドカード import で一意に決まる名前だけをつなぐ
+- ルートの `CLAUDE.md` に「モジュール構成」「依存の向き」の表があれば、責務と依存してよい範囲を取り込む。これらは**推測**として表示する
+
+Kotlin の完全な構文解析はしていません（正規表現と簡易スキャナ）。iOS / Swift のプロジェクトには未対応です。
 
 ## できること
 
