@@ -10,6 +10,10 @@ the AI answers by pointing back into the same graph (highlights, what-if removal
 
 > 人間は、自分が見ているものをAIに説明し直すことなく、その対象について問いを立て、AIと一緒に理解を深められるか？
 
+| 関係を選んで「なぜこの依存関係が必要なの？」 | 「Repositoryを削除するとどうなる？」の What-if |
+| --- | --- |
+| ![エッジを選んで質問すると、回答の文と対応する要素が図の上で強調される](docs/images/ask-about-edge.jpg) | ![削除されるもの・切れる関係・影響を受ける要素を図の上に表示する](docs/images/what-if-removal.jpg) |
+
 ## 使い方
 
 ターミナルから起動します。AI の回答には、ログイン済みの [Claude Code](https://claude.com/claude-code) CLI
@@ -84,7 +88,8 @@ UI の状態をそのまま送るのではなく、質問対象（subject）を�
   visual（`whatIfRemove` / `trace`）だけです。影響範囲の計算と描画は UI が行い、モデルの出力を実行しません。
 - サーバーで ID の実在を検証し、存在しない参照は除外して画面に件数を表示します。visual は一部でも不正なら丸ごと捨てます。
 - `claude` はツールを無効化し、空の一時ディレクトリで起動します（CLAUDE.md などに影響されないように）。
-  サーバーは 127.0.0.1 にだけ bind します。
+  サーバーは 127.0.0.1 にだけ bind し、ほかのサイトや DNS rebinding からの API 呼び出し（サブスクリプションを
+  勝手に消費される）を防ぐため、Host / Origin が自分自身のリクエストだけを受け付けます。
 
 ## スコープ外
 

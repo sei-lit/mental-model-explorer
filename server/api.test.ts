@@ -3,7 +3,7 @@ import { GraphIndex } from '../src/core/model/graphIndex'
 import type { Answer } from '../src/core/understanding/answer'
 import type { Responder } from '../src/core/understanding/responder'
 import { miniGraph } from '../src/core/testing/miniGraph'
-import { BadRequestError, handleAsk } from './api'
+import { BadRequestError, handleAsk, isTrustedRequest } from './api'
 import { ClaudeCliError, parseCliResult } from './claudeCliResponder'
 
 const index = new GraphIndex(miniGraph())
@@ -57,5 +57,31 @@ describe('parseCliResult', () => {
   it('reports output that is not JSON or lacks structured output', () => {
     expect(() => parseCliResult('oops')).toThrow(ClaudeCliError)
     expect(() => parseCliResult(JSON.stringify({ subtype: 'success', is_error: false, result: 'text' }))).toThrow(/structured_output/)
+  })
+})
+
+describe('isTrustedRequest', () => {
+  const json = { 'content-type': 'application/json' }
+
+  it('accepts same-origin requests to a loopback host', () => {
+    expect(isTrustedRequest('POST', { host: '127.0.0.1:5178', origin: 'http://127.0.0.1:5178', ...json })).toBe(true)
+    expect(isTrustedRequest('GET', { host: 'localhost:5173' })).toBe(true)
+  })
+
+  it('rejects requests sent from another site', () => {
+    expect(isTrustedRequest('POST', { host: '127.0.0.1:5178', origin: 'https://example.com', ...json })).toBe(false)
+  })
+
+  it('rejects malformed host or origin headers instead of throwing', () => {
+    expect(isTrustedRequest('GET', { host: 'a b' })).toBe(false)
+    expect(isTrustedRequest('GET', { host: '127.0.0.1:5178', origin: 'null' })).toBe(false)
+  })
+
+  it('rejects a rebound host name even when it resolves to loopback', () => {
+    expect(isTrustedRequest('GET', { host: 'attacker.example:5178' })).toBe(false)
+  })
+
+  it('rejects a POST that a cross-site form could send without a preflight', () => {
+    expect(isTrustedRequest('POST', { host: '127.0.0.1:5178', 'content-type': 'text/plain' })).toBe(false)
   })
 })

@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import type { ProjectGraph } from '../src/core/model/graph'
 import { GraphIndex } from '../src/core/model/graphIndex'
 import { AnswerFormatError, validateAnswer } from '../src/core/understanding/answer'
@@ -23,6 +23,32 @@ const MAX_QUESTION_LENGTH = 2000
 
 export class BadRequestError extends Error {}
 
+const loopbackHosts = new Set(['127.0.0.1', 'localhost', '[::1]'])
+
+/**
+ * Binding to loopback is not enough: any page open in the user's browser can send requests to
+ * 127.0.0.1, and a DNS-rebinding page can even read the responses. Each request would spend the
+ * user's Claude subscription, so only same-origin requests addressed to a loopback host are served.
+ * A JSON content type is required for POST because it cannot be sent cross-origin without a
+ * CORS preflight, which this server never approves.
+ */
+export function isTrustedRequest(method: string | undefined, headers: IncomingHttpHeaders): boolean {
+  const host = headers.host
+  const hostname = host === undefined ? null : parseUrl(`http://${host}`)?.hostname
+  if (!hostname || !loopbackHosts.has(hostname)) return false
+  if (headers.origin !== undefined && parseUrl(headers.origin)?.host !== host) return false
+  if (method === 'POST' && !headers['content-type']?.startsWith('application/json')) return false
+  return true
+}
+
+function parseUrl(text: string): URL | null {
+  try {
+    return new URL(text)
+  } catch {
+    return null
+  }
+}
+
 export async function handleAsk(index: GraphIndex, responder: Responder, body: unknown): Promise<AskResult> {
   const context = (body as { context?: QuestionContext } | null)?.context
   if (!context || typeof context.question !== 'string' || context.question.trim() === '') {
@@ -45,6 +71,8 @@ export function createApiMiddleware(options: ApiOptions) {
 
   return async function api(req: IncomingMessage, res: ServerResponse, next: Next): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost')
+    if (!url.pathname.startsWith('/api/')) return next()
+    if (!isTrustedRequest(req.method, req.headers)) return sendJson(res, 403, { error: 'forbidden' })
     try {
       if (req.method === 'GET' && url.pathname === '/api/project') return sendJson(res, 200, options.graph)
       if (req.method === 'GET' && url.pathname === '/api/config') return sendJson(res, 200, config)
@@ -52,8 +80,7 @@ export function createApiMiddleware(options: ApiOptions) {
         const result = await handleAsk(index, options.responder, await readJson(req))
         return sendJson(res, 200, result)
       }
-      if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'not found' })
-      next()
+      sendJson(res, 404, { error: 'not found' })
     } catch (error) {
       if (error instanceof BadRequestError) return sendJson(res, 400, { error: error.message })
       if (error instanceof ClaudeCliError || error instanceof AnswerFormatError) return sendJson(res, 502, { error: error.message })
