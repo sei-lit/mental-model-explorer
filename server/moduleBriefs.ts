@@ -4,22 +4,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { GraphIndex } from '../src/core/model/graphIndex'
 import type { BriefGenerator } from '../src/core/understanding/briefGenerator'
-import { buildDossier, manifestOf, renderDossier, type DossierFile, type DossierManifest, type ModuleDossier, type ReadSource } from '../src/core/understanding/dossier'
-import { BRIEF_PROMPT_VERSION, briefJsonSchema, briefSystemPrompt, validateBrief, type ValidatedBrief } from '../src/core/understanding/moduleBrief'
-import type { ResponderKind } from '../src/core/understanding/responder'
+import { buildDossier, manifestOf, renderDossier, type ModuleDossier, type ReadSource } from '../src/core/understanding/dossier'
+import { BRIEF_PROMPT_VERSION, briefJsonSchema, briefSystemPrompt, validateBrief, type ModuleBriefResult } from '../src/core/understanding/moduleBrief'
 import { isolatedWorkdir, runStructured, type ClaudeCliOptions } from './claudeCliResponder'
-
-export interface ModuleBriefResult extends ValidatedBrief {
-  moduleId: string
-  /** Identifies the dossier, prompt and model the brief was generated from. Shown with the context preview. */
-  hash: string
-  manifest: DossierManifest
-  /** The files the brief cites, so the page can show the code behind each statement. */
-  files: DossierFile[]
-  generatedBy: ResponderKind
-  model: string | null
-  cached: boolean
-}
 
 export class NotAModuleError extends Error {}
 
@@ -87,6 +74,7 @@ export class ModuleBriefService {
       hash,
       manifest: manifestOf(dossier),
       files: dossier.files,
+      collaborators: dossier.collaborators.map(({ moduleId, name, direction, totalRelations }) => ({ moduleId, name, direction, totalRelations })),
       generatedBy: this.generator.kind,
       model: this.model,
       cached,

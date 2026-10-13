@@ -11,6 +11,8 @@ export interface AnswerCard {
   targetLabel: string
   /** Where the user was when asking, so the card can bring that screen back later. */
   viewpoint: Viewpoint
+  /** Set when asked on a module page: the server attaches that module's source, and restoring reopens the page. */
+  moduleId: string | null
   context: QuestionContext
   reply: Reply
 }

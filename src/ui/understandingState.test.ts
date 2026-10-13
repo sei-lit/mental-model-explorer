@@ -8,6 +8,7 @@ const card = (id: string, question: string): AnswerCard => ({
   target: { kind: 'view' },
   targetLabel: '表示中の画面全体',
   viewpoint: { scopeId: 'project', perspective: 'structure', flowId: null, aroundChanges: false, selection: { kind: 'none' } },
+  moduleId: null,
   context: {} as AnswerCard['context'],
   reply: { status: 'pending' },
 })

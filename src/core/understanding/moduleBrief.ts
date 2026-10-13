@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { citableIds, type ModuleDossier } from './dossier'
+import { citableIds, type DossierCollaborator, type DossierFile, type DossierManifest, type ModuleDossier } from './dossier'
+import type { ResponderKind } from './responder'
 
 const evidence = z.array(z.string()).describe('この文を支える宣言 ID / エッジ ID。メンバーがあればメンバー（メソッド・プロパティ）を指す')
 const claim = z.object({ text: z.string(), evidence })
@@ -57,6 +58,21 @@ export interface ValidatedBrief {
   dropped: { section: BriefSection; text: string }[]
   /** The purpose or most responsibilities could not be grounded. */
   partial: boolean
+}
+
+/** What the module page receives: the brief with what it was generated from. */
+export interface ModuleBriefResult extends ValidatedBrief {
+  moduleId: string
+  /** Identifies the dossier, prompt and model the brief was generated from. Shown with the context preview. */
+  hash: string
+  manifest: DossierManifest
+  /** The files the brief cites, so the page can show the code behind each statement. */
+  files: DossierFile[]
+  /** Every collaborating module, including those the AI did not describe. */
+  collaborators: Pick<DossierCollaborator, 'moduleId' | 'name' | 'direction' | 'totalRelations'>[]
+  generatedBy: ResponderKind
+  model: string | null
+  cached: boolean
 }
 
 export class BriefFormatError extends Error {}

@@ -2,7 +2,7 @@ import type { VisibleView } from '../core/exploration/projectView'
 import { canEnter, type ExplorationState, type Selection } from '../core/exploration/state'
 import type { Claim, GraphEdge } from '../core/model/graph'
 import type { GraphIndex } from '../core/model/graphIndex'
-import { kindText, layerColor, perspectiveLabel, provenanceLabel, relationLabel } from './labels'
+import { kindText, layerColor, perspectiveLabel, provenanceLabel, qualifiedName, relationLabel } from './labels'
 
 interface InspectorProps {
   index: GraphIndex
@@ -12,15 +12,31 @@ interface InspectorProps {
   onEnter: (nodeId: string) => void
   onQuickQuestion: (question: string) => void
   onFocusRef: (ref: string) => void
+  /** The module whose page is open, if any. */
+  modulePageId: string | null
+  onOpenModulePage: (moduleId: string) => void
 }
 
-export function Inspector({ index, exploration, view, onSelect, onEnter, onQuickQuestion, onFocusRef }: InspectorProps) {
+export function Inspector({ index, exploration, view, onSelect, onEnter, onQuickQuestion, onFocusRef, modulePageId, onOpenModulePage }: InspectorProps) {
   const { selection } = exploration
+  // The module page explains the module itself; repeating the analysis-time description here would
+  // put the rule-based text the page replaces right next to it.
+  if (modulePageId !== null) {
+    return (
+      <section className="inspector panel">
+        <h3>{index.node(modulePageId).name} を理解する</h3>
+        <p className="muted">左のページは AI がソースから作った要約です。わからないところは上の欄から質問できます。回答の根拠はページのコードで確認できます。</p>
+        <Suggestions index={index} selection={selection} modulePageOpen onQuickQuestion={onQuickQuestion} />
+      </section>
+    )
+  }
   return (
     <section className="inspector panel">
       {selection.kind === 'none' && <ScopeSummary index={index} exploration={exploration} view={view} />}
       {selection.kind === 'none' && <ChangesInScope index={index} scopeId={exploration.scopeId} onFocusRef={onFocusRef} />}
-      {selection.kind === 'node' && <NodeDetail index={index} nodeId={selection.nodeId} onSelect={onSelect} onEnter={onEnter} />}
+      {selection.kind === 'node' && (
+        <NodeDetail index={index} nodeId={selection.nodeId} onSelect={onSelect} onEnter={onEnter} onOpenModulePage={onOpenModulePage} />
+      )}
       {selection.kind === 'nodes' && <NodesDetail index={index} nodeIds={selection.nodeIds} onSelect={onSelect} />}
       {selection.kind === 'edge' && <EdgeDetail index={index} selection={selection} onSelect={onSelect} />}
       {selection.kind === 'code' && (
@@ -33,7 +49,7 @@ export function Inspector({ index, exploration, view, onSelect, onEnter, onQuick
           </p>
         </div>
       )}
-      <Suggestions index={index} selection={selection} onQuickQuestion={onQuickQuestion} />
+      <Suggestions index={index} selection={selection} modulePageOpen={false} onQuickQuestion={onQuickQuestion} />
     </section>
   )
 }
@@ -97,13 +113,15 @@ function ChangesInScope({ index, scopeId, onFocusRef }: { index: GraphIndex; sco
 }
 
 /** Members are listed with their type ("ViewModel.init"); a bare "init" or "body" says nothing in a list. */
-function qualifiedName(index: GraphIndex, id: string): string {
-  const node = index.node(id)
-  const parent = node.parentId ? index.node(node.parentId) : null
-  return parent?.kind === 'type' ? `${parent.name}.${node.name}` : node.name
+interface NodeDetailProps {
+  index: GraphIndex
+  nodeId: string
+  onSelect: (s: Selection) => void
+  onEnter: (id: string) => void
+  onOpenModulePage: (moduleId: string) => void
 }
 
-function NodeDetail({ index, nodeId, onSelect, onEnter }: { index: GraphIndex; nodeId: string; onSelect: (s: Selection) => void; onEnter: (id: string) => void }) {
+function NodeDetail({ index, nodeId, onSelect, onEnter, onOpenModulePage }: NodeDetailProps) {
   const node = index.node(nodeId)
   const layer = index.layerOf(nodeId)
   const color = layerColor(index.layers, layer)
@@ -128,6 +146,11 @@ function NodeDetail({ index, nodeId, onSelect, onEnter }: { index: GraphIndex; n
         )}
       </div>
       <div className="muted path">{index.path(nodeId).map((n) => n.name).join(' › ')}</div>
+      {node.kind === 'module' && (
+        <button className="primary understand-button" onClick={() => onOpenModulePage(nodeId)}>
+          このモジュールを理解する →
+        </button>
+      )}
       {node.summary && <p>{node.summary}</p>}
       <ClaimLine label="責務" claim={node.responsibility} />
       <ClaimLine label="役割" claim={node.role} />
@@ -246,23 +269,34 @@ function EdgeDetail({ index, selection, onSelect }: { index: GraphIndex; selecti
   )
 }
 
-function Suggestions({ index, selection, onQuickQuestion }: { index: GraphIndex; selection: Selection; onQuickQuestion: (question: string) => void }) {
+interface SuggestionsProps {
+  index: GraphIndex
+  selection: Selection
+  modulePageOpen: boolean
+  onQuickQuestion: (question: string) => void
+}
+
+function Suggestions({ index, selection, modulePageOpen, onQuickQuestion }: SuggestionsProps) {
   const questions: string[] = []
-  switch (selection.kind) {
-    case 'node':
-      questions.push('このモジュールの責務は？', `「${index.node(selection.nodeId).name}」を削除するとどうなる？`)
-      break
-    case 'edge':
-      questions.push('なぜこの依存関係が必要なの？')
-      break
-    case 'nodes':
-      break
-    case 'code':
-      questions.push('この処理は何を保証している？')
-      break
-    case 'none':
-      questions.push('この構造の特徴は？')
-      break
+  if (modulePageOpen) {
+    questions.push('このモジュールが無かったら何が壊れる？', '代表的な処理の流れを順に説明して', '隣のモジュールとどう分担している？')
+  } else {
+    switch (selection.kind) {
+      case 'node':
+        questions.push('このモジュールの責務は？', `「${index.node(selection.nodeId).name}」を削除するとどうなる？`)
+        break
+      case 'edge':
+        questions.push('なぜこの依存関係が必要なの？')
+        break
+      case 'nodes':
+        break
+      case 'code':
+        questions.push('この処理は何を保証している？')
+        break
+      case 'none':
+        questions.push('この構造の特徴は？')
+        break
+    }
   }
   if (index.graph.changes) questions.push('この PR は何を変えた？影響しうるのはどこ？')
   return (

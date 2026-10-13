@@ -1,5 +1,6 @@
 import type { ProjectGraph } from '../../core/model/graph'
 import type { QuestionContext } from '../../core/understanding/context'
+import type { ModuleBriefResult } from '../../core/understanding/moduleBrief'
 import type { AskResult, ResponderKind } from '../../core/understanding/responder'
 import type { ProjectSource } from '../../data/projectSource'
 
@@ -18,13 +19,18 @@ export function fetchConfig(): Promise<ClientConfig> {
   return getJson<ClientConfig>('/api/config')
 }
 
-export async function ask(context: QuestionContext): Promise<AskResult> {
+/** With a module id the server attaches that module's brief and source, which only it can read. */
+export async function ask(context: QuestionContext, moduleId: string | null): Promise<AskResult> {
   const response = await fetch('/api/ask', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ context }),
+    body: JSON.stringify(moduleId === null ? { context } : { context, moduleId }),
   })
   return readJson<AskResult>(response)
+}
+
+export function fetchModuleBrief(moduleId: string): Promise<ModuleBriefResult> {
+  return getJson<ModuleBriefResult>(`/api/module-brief?id=${encodeURIComponent(moduleId)}`)
 }
 
 async function getJson<T>(url: string): Promise<T> {

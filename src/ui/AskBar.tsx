@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { QuestionContext } from '../core/understanding/context'
+import type { ModuleBriefResult } from '../core/understanding/moduleBrief'
 
 interface AskBarProps {
   targetLabel: string
@@ -11,6 +12,11 @@ interface AskBarProps {
   onSubmit: () => void
   context: QuestionContext
   onPreviewChange: (previewing: boolean) => void
+  /** On a module page the bar sits above the page, where the user starts reading. */
+  docked: 'top' | 'bottom'
+  blockedReason: string | null
+  /** The module brief the server will attach; shown so the preview covers everything sent. */
+  moduleAttachment: ModuleBriefResult | null
 }
 
 export function AskBar({
@@ -23,8 +29,11 @@ export function AskBar({
   onSubmit,
   context,
   onPreviewChange,
+  docked,
+  blockedReason,
+  moduleAttachment,
 }: AskBarProps) {
-  const canSubmit = question.trim() !== ''
+  const canSubmit = question.trim() !== '' && blockedReason === null
   const [previewOpen, setPreviewOpen] = useState(false)
   // The preview is for checking what will be sent; once sent, it would only cover the canvas
   // where the answer is about to be highlighted.
@@ -33,7 +42,7 @@ export function AskBar({
     onSubmit()
   }
   return (
-    <div className="ask-bar">
+    <div className={`ask-bar docked-${docked}`}>
       <div className="ask-row">
         <span className="target-chip" title="質問の対象">
           対象: {targetLabel}
@@ -48,7 +57,7 @@ export function AskBar({
         <input
           className="ask-input"
           value={question}
-          placeholder="見ているものについて質問する"
+          placeholder={blockedReason ?? '見ているものについて質問する'}
           onChange={(event) => onQuestionChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.nativeEvent.isComposing && canSubmit) send()
@@ -63,6 +72,7 @@ export function AskBar({
           AI に渡す内容
         </summary>
         <ContextSummary context={context} />
+        {moduleAttachment && <ModuleAttachmentSummary attachment={moduleAttachment} />}
         <pre>{JSON.stringify(context, null, 2)}</pre>
       </details>
     </div>
@@ -116,5 +126,33 @@ function ContextSummary({ context }: { context: QuestionContext }) {
       <dt>省略した件数</dt>
       <dd>{omitted.length === 0 ? 'なし' : omitted.map(([label, count]) => `${label} ${count} 件`).join(' / ')}</dd>
     </dl>
+  )
+}
+
+function ModuleAttachmentSummary({ attachment }: { attachment: ModuleBriefResult }) {
+  const { manifest } = attachment
+  const lines = manifest.files.reduce((sum, file) => sum + file.lines, 0)
+  return (
+    <div className="module-attachment">
+      <p>
+        ＋ サーバーが付けるモジュールの資料: ページの要約（{attachment.hash}・{attachment.generatedBy === 'mock' ? 'モック' : attachment.model}）、宣言{' '}
+        {manifest.declarations} 件、協働するモジュール {manifest.collaborators} 件、ソース {manifest.files.length} ファイル（{lines} 行）
+      </p>
+      <details>
+        <summary>ファイルの一覧</summary>
+        <ul>
+          {manifest.files.map((file) => (
+            <li key={file.path}>
+              {file.path}（{file.lines} 行）
+            </li>
+          ))}
+          {manifest.excluded.map((file) => (
+            <li key={file.path} className="muted">
+              {file.path}（含めない: {file.reason}）
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
   )
 }
