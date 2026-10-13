@@ -210,7 +210,7 @@ export function Workspace({ graph, config }: { graph: ProjectGraph; config: Clie
           />
         </div>
         <aside className="side">
-          <Inspector index={index} exploration={exploration} view={view} onSelect={select} onEnter={enter} onQuickQuestion={setQuestion} />
+          <Inspector index={index} exploration={exploration} view={view} onSelect={select} onEnter={enter} onQuickQuestion={setQuestion} onFocusRef={focusRef} />
           <ExplanationPanel
             index={index}
             cards={understanding.cards}

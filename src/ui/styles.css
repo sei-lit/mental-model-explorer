@@ -895,3 +895,64 @@ button.primary {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* pull request laid over the graph */
+.change-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 10px;
+  border-radius: 8px;
+  background: #fff4e5;
+  border: 1px solid #f0c48a;
+  font-size: 12px;
+}
+
+.change-toggle .change-title {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.change-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.change-warning {
+  color: #b45309;
+  cursor: help;
+}
+
+.changed-badge {
+  background: #fff4e5;
+  border-color: #f0c48a;
+  color: #9a5b00;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.concept-node.changed {
+  box-shadow: 0 0 0 2px #f0a64a;
+}
+
+.changes-in-scope {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.changes-in-scope ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.changes-in-scope .warning {
+  color: #b45309;
+  font-size: 12px;
+}

@@ -189,9 +189,29 @@ function GraphCanvasInner({
       >
         <Background gap={24} />
       </ReactFlow>
-      {focusMode && shownEdges.length === 0 && (
-        <div className="canvas-hint">関係が多いため、選んだ・ポイントした要素の関係だけを表示します（{view.edges.length} 本）</div>
-      )}
+      <CanvasHints view={view} focusHint={focusMode && shownEdges.length === 0 ? view.edges.length : null} />
     </ZoomLevelContext.Provider>
+  )
+}
+
+function CanvasHints({ view, focusHint }: { view: GraphView; focusHint: number | null }) {
+  const lines: string[] = []
+  if (view.changeFocus) {
+    lines.push(
+      !view.changeFocus.changedHere
+        ? 'この範囲に PR の変更はありません'
+        : view.changeFocus.hiddenNodes > 0
+          ? `PR の変更と、その直接の相手だけを表示しています（ほか ${view.changeFocus.hiddenNodes} 個は非表示）`
+          : 'PR で変更された要素に「変更」の印を付けています',
+    )
+  }
+  if (focusHint !== null) lines.push(`関係が多いため、選んだ・ポイントした要素の関係だけを表示します（${focusHint} 本）`)
+  if (lines.length === 0) return null
+  return (
+    <div className="canvas-hint">
+      {lines.map((line) => (
+        <div key={line}>{line}</div>
+      ))}
+    </div>
   )
 }

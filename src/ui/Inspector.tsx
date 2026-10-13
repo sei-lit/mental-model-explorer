@@ -11,13 +11,15 @@ interface InspectorProps {
   onSelect: (selection: Selection) => void
   onEnter: (nodeId: string) => void
   onQuickQuestion: (question: string) => void
+  onFocusRef: (ref: string) => void
 }
 
-export function Inspector({ index, exploration, view, onSelect, onEnter, onQuickQuestion }: InspectorProps) {
+export function Inspector({ index, exploration, view, onSelect, onEnter, onQuickQuestion, onFocusRef }: InspectorProps) {
   const { selection } = exploration
   return (
     <section className="inspector panel">
       {selection.kind === 'none' && <ScopeSummary index={index} exploration={exploration} view={view} />}
+      {selection.kind === 'none' && <ChangesInScope index={index} scopeId={exploration.scopeId} onFocusRef={onFocusRef} />}
       {selection.kind === 'node' && <NodeDetail index={index} nodeId={selection.nodeId} onSelect={onSelect} onEnter={onEnter} />}
       {selection.kind === 'nodes' && <NodesDetail index={index} nodeIds={selection.nodeIds} onSelect={onSelect} />}
       {selection.kind === 'edge' && <EdgeDetail index={index} selection={selection} onSelect={onSelect} />}
@@ -51,6 +53,45 @@ function ScopeSummary({ index, exploration, view }: { index: GraphIndex; explora
       ) : (
         <p className="muted">コードを表示しています。行をクリックすると、その行について質問できます。</p>
       )}
+    </div>
+  )
+}
+
+const MAX_LISTED_CHANGES = 20
+
+function ChangesInScope({ index, scopeId, onFocusRef }: { index: GraphIndex; scopeId: string; onFocusRef: (ref: string) => void }) {
+  const changes = index.graph.changes
+  if (!changes) return null
+  const inScope = changes.nodeIds.filter((id) => index.isWithin(id, scopeId))
+  return (
+    <div className="changes-in-scope">
+      <h4>
+        {changes.url ? (
+          <a href={changes.url} target="_blank" rel="noreferrer">
+            {changes.title}
+          </a>
+        ) : (
+          changes.title
+        )}
+      </h4>
+      {changes.warnings.map((warning) => (
+        <p key={warning} className="warning">
+          ⚠ {warning}
+        </p>
+      ))}
+      <p className="muted">
+        この範囲で変更された宣言 {inScope.length} 件（全体 {changes.nodeIds.length} 件・{changes.files.length} ファイル）
+      </p>
+      <ul>
+        {inScope.slice(0, MAX_LISTED_CHANGES).map((id) => (
+          <li key={id}>
+            <button className="link-button" onClick={() => onFocusRef(id)} title={index.path(id).map((node) => node.name).join(' > ')}>
+              {index.node(id).name}
+            </button>
+          </li>
+        ))}
+        {inScope.length > MAX_LISTED_CHANGES && <li className="muted">ほか {inScope.length - MAX_LISTED_CHANGES} 件</li>}
+      </ul>
     </div>
   )
 }
@@ -216,6 +257,7 @@ function Suggestions({ index, selection, onQuickQuestion }: { index: GraphIndex;
       questions.push('この構造の特徴は？')
       break
   }
+  if (index.graph.changes) questions.push('この PR は何を変えた？影響しうるのはどこ？')
   return (
     <div className="suggestions">
       {selection.kind === 'nodes' && (

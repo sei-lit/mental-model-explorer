@@ -39,6 +39,7 @@ export function ConceptNode({ data }: NodeProps<ConceptFlowNode>) {
     outlined ? 'outlined' : '',
     perspective === 'flow' && !viewNode.inFlow ? 'out-of-flow' : '',
     enterable ? 'enterable' : '',
+    viewNode.role === 'member' && viewNode.changes > 0 ? 'changed' : '',
   ]
 
   return (
@@ -53,6 +54,11 @@ export function ConceptNode({ data }: NodeProps<ConceptFlowNode>) {
           </span>
           <span className="node-name">{node.name}</span>
           {viewNode.role === 'context' && <span className="badge">範囲外</span>}
+          {viewNode.role === 'member' && viewNode.changes > 0 && (
+            <span className="badge changed-badge" title="PR で変更された宣言の数（この要素の中を含む）">
+              変更 {viewNode.changes}
+            </span>
+          )}
         </div>
         {data.partners && (
           <div className="node-partners" title="この粒度でまとめた関係の相手の数（出ていく / 入ってくる）">
